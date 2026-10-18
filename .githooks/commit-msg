@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# commit-msg hook: forbid coding-assistant / tool attribution in commit messages.
+#
+# Git runs this hook with one argument ($1): the path to a temporary file
+# holding the proposed commit message. Exit non-zero to reject the commit.
+set -euo pipefail
+
+msg_file="$1"
+
+# Reject any "Co-authored-by:" trailer (case-insensitive, leading whitespace allowed).
+if grep -qiE '^[[:space:]]*Co-authored-by:' "$msg_file"; then
+    echo "commit-msg: rejected -- 'Co-authored-by' trailer is not allowed in this repo." >&2
+    exit 1
+fi
+
+# Reject any line that starts with "Generated with" (case-insensitive).
+if grep -qiE '^[[:space:]]*Generated with' "$msg_file"; then
+    echo "commit-msg: rejected -- a line starting with 'Generated with' is not allowed in this repo." >&2
+    exit 1
+fi
+
+exit 0
