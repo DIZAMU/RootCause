@@ -1,0 +1,21 @@
+ticket:
+  title: "Intranettet er nede"
+  from: "Kari Nordmann, Økonomi"
+  body: |
+    Hei. Siden i morges får ingen her åpnet {site_name}-nettstedet.
+    Noen endret noe på webserveren i går. Kan du ta en titt?
+hints:
+  - "Sjekk om webserveren godtar sin egen konfigurasjon."
+  - "nginx har en innebygd konfigurasjonstest: kjør nginx -t"
+  - "Linje {line} i nginx-konfigurasjonen har en syntaksfeil. Rett den og start nginx."
+walkthrough: |
+  Nettstedet gikk ned fordi nginx-konfigurasjonen har en syntaksfeil, så nginx
+  starter ikke. Finn den med nginx -t, som viser filen og linjen for den første
+  feilen. Åpne den linjen i /etc/nginx/conf.d/rootcause.conf og rett feilen, et
+  manglende semikolon på slutten av en linje. Kjør nginx -t på nytt til testen
+  er vellykket, og start deretter nginx. {site_name}-nettstedet svarer igjen på
+  port {port}.
+feedback:
+  site_unreachable: "Nettstedet svarer fortsatt ikke på porten sin."
+  wrong_content: "Noe svarer, men det er ikke den opprinnelige {site_name}-siden."
+  config_invalid: "nginx-konfigurasjonen består fortsatt ikke sin egen test."

@@ -1,0 +1,21 @@
+ticket:
+  title: "The intranet is down"
+  from: "Kari Nordmann, Finance"
+  body: |
+    Hi. Since this morning nobody here can open the {site_name} site.
+    Someone changed something on the web server yesterday. Can you take a look?
+hints:
+  - "Check whether the web server accepts its own configuration."
+  - "nginx has a built-in config test: run nginx -t"
+  - "Line {line} of the nginx config file has a syntax error. Fix it and start nginx."
+walkthrough: |
+  The site went down because the nginx configuration has a syntax error, so
+  nginx will not start. Find it with nginx -t, which prints the file and the
+  line of the first error. Open that line in /etc/nginx/conf.d/rootcause.conf
+  and fix the mistake, a missing semicolon at the end of a directive. Run
+  nginx -t again until it reports the test is successful, then start nginx. The
+  {site_name} site responds again on port {port}.
+feedback:
+  site_unreachable: "The site still does not respond on its port."
+  wrong_content: "Something responds, but it is not the original {site_name} page."
+  config_invalid: "The nginx configuration still fails its own test."
