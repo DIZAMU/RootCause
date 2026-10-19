@@ -1,0 +1,11 @@
+ticket:
+  title: "Title"
+  from: "Sender"
+  body: "Body"
+hints:
+  - "one"
+  - "two"
+  - "three"
+walkthrough: "How it works."
+feedback:
+  site_unreachable: "The site does not respond."

@@ -1,0 +1,95 @@
+package exercise
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestLoadValidFixture(t *testing.T) {
+	ex, err := Load("testdata/valid")
+	if err != nil {
+		t.Fatalf("Load returned an error for a valid exercise: %v", err)
+	}
+	if ex.ID != "valid" {
+		t.Errorf("ID = %q, want %q", ex.ID, "valid")
+	}
+	if ex.Topic != "services" {
+		t.Errorf("Topic = %q, want %q", ex.Topic, "services")
+	}
+	if got := ex.Variants["port"]; len(got) != 3 || got[0] != "8080" {
+		t.Errorf("port variant = %v, want [8080 8081 8088] as strings", got)
+	}
+}
+
+func TestValidateSchemaRejectsBadFields(t *testing.T) {
+	good := func() *Exercise {
+		return &Exercise{
+			ID: "ex", Version: 1, Topic: "services", Difficulty: 1,
+			EstimatedMinutes: 10, Network: "none",
+			Resources:     Resources{Memory: "256Mi", CPUs: 0.5},
+			SessionTTLMin: 60,
+			Check:         Check{RunsFrom: "sandbox", Before: "none"},
+		}
+	}
+	if err := good().validateSchema(); err != nil {
+		t.Fatalf("baseline exercise should be valid, got: %v", err)
+	}
+
+	cases := []struct {
+		name string
+		want string
+		mut  func(*Exercise)
+	}{
+		{"bad topic", "topic", func(e *Exercise) { e.Topic = "frobnication" }},
+		{"difficulty too high", "difficulty", func(e *Exercise) { e.Difficulty = 4 }},
+		{"zero version", "version", func(e *Exercise) { e.Version = 0 }},
+		{"bad network", "network", func(e *Exercise) { e.Network = "host" }},
+		{"bad memory", "memory", func(e *Exercise) { e.Resources.Memory = "256" }},
+		{"bad runs_from", "runs_from", func(e *Exercise) { e.Check.RunsFrom = "nowhere" }},
+		{"bad id", "id", func(e *Exercise) { e.ID = "Bad_ID" }},
+		{"empty variant", "no values", func(e *Exercise) { e.Variants = map[string]StringList{"x": {}} }},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			e := good()
+			c.mut(e)
+			err := e.validateSchema()
+			if err == nil {
+				t.Fatalf("expected an error mentioning %q, got none", c.want)
+			}
+			if !strings.Contains(err.Error(), c.want) {
+				t.Errorf("error %q should mention %q", err.Error(), c.want)
+			}
+		})
+	}
+}
+
+func TestSelectVariantIsDeterministic(t *testing.T) {
+	ex, err := Load("testdata/valid")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	const seed = int64(42)
+	first := ex.SelectVariant(seed)
+	second := ex.SelectVariant(seed)
+	if len(first) != len(ex.Variants) {
+		t.Fatalf("selected %d variants, want %d", len(first), len(ex.Variants))
+	}
+	for name, v := range first {
+		if second[name] != v {
+			t.Errorf("variant %q not deterministic: %q then %q", name, v, second[name])
+		}
+		if !contains(ex.Variants[name], v) {
+			t.Errorf("variant %q chose %q, not in allowed values %v", name, v, ex.Variants[name])
+		}
+	}
+}
+
+func contains(list StringList, want string) bool {
+	for _, v := range list {
+		if v == want {
+			return true
+		}
+	}
+	return false
+}

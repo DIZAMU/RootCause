@@ -1,0 +1,16 @@
+id: valid
+version: 1
+topic: services
+difficulty: 1
+estimated_minutes: 10
+network: none
+resources:
+  memory: 256Mi
+  cpus: 0.5
+session_ttl_minutes: 60
+check:
+  runs_from: sandbox
+  before: none
+variants:
+  site_name: [intranet, wiki, portal]
+  port: [8080, 8081, 8088]

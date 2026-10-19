@@ -1,0 +1,11 @@
+ticket:
+  title: "Tittel"
+  from: "Avsender"
+  body: "Tekst"
+hints:
+  - "en"
+  - "to"
+  - "tre"
+walkthrough: "Slik virker det."
+feedback:
+  site_unreachable: "Nettstedet svarer ikke."
