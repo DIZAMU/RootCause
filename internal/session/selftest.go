@@ -53,7 +53,9 @@ func SelfTest(ctx context.Context, rt runtime.Runtime, builder Builder, exDir st
 func (e *Engine) selfTestScenario(ctx context.Context, ex *exercise.Exercise, seed int64, tag string, env map[string]string, solve bool, log io.Writer) error {
 	name := fmt.Sprintf("selftest-%s-%d-%s", ex.ID, seed, tag)
 	_ = e.rt.Destroy(ctx, "rootcause-"+name)
-	sb, err := e.rt.Create(ctx, e.specFor(ex, name))
+	spec := e.specFor(ex, name)
+	spec.Labels[labelSelftest] = "true" // the reaper never touches these
+	sb, err := e.rt.Create(ctx, spec)
 	if err != nil {
 		return err
 	}

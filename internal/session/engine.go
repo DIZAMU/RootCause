@@ -147,8 +147,19 @@ func (e *Engine) Start(ctx context.Context, learnerID int, exerciseID string, se
 	return started, err
 }
 
+// Labels on every sandbox, read by the reaper.
+const (
+	labelSession  = "rootcause.session"  // the session id
+	labelDatabase = "rootcause.database" // the database that owns the session
+	labelSelftest = "rootcause.selftest" // "true" on selftest sandboxes
+)
+
 // specFor builds the sandbox spec for an exercise session.
 func (e *Engine) specFor(ex *exercise.Exercise, sessionID string) runtime.SandboxSpec {
+	labels := map[string]string{labelSession: sessionID}
+	if e.st != nil {
+		labels[labelDatabase] = e.st.Database()
+	}
 	return runtime.SandboxSpec{
 		Name:    "rootcause-" + sessionID,
 		Image:   imageTag(ex),
@@ -156,7 +167,7 @@ func (e *Engine) specFor(ex *exercise.Exercise, sessionID string) runtime.Sandbo
 		CPUs:    ex.Resources.CPUs,
 		Network: ex.Network,
 		Caps:    ex.Capabilities,
-		Labels:  map[string]string{"rootcause.session": sessionID},
+		Labels:  labels,
 	}
 }
 
@@ -326,7 +337,9 @@ func (e *Engine) Hint(ctx context.Context, sessionID string) (int, error) {
 }
 
 // Reset rebuilds the sandbox for the same variant and re-plants the fault,
-// keeping revealed hints. It logs reset (spec section 6).
+// keeping revealed hints. It logs reset (spec section 6). If the rebuild
+// fails, the session has no working sandbox, so it is voided with a voided
+// event, the same way as a failed Start.
 func (e *Engine) Reset(ctx context.Context, sessionID string) error {
 	sess, err := e.st.SessionByID(ctx, sessionID)
 	if err != nil {
@@ -338,15 +351,25 @@ func (e *Engine) Reset(ctx context.Context, sessionID string) error {
 	}
 	_ = e.rt.Destroy(ctx, sess.SandboxID)
 
+	void := func(sandboxID string, err error) error {
+		bg := context.Background()
+		if sandboxID != "" {
+			_ = e.rt.Destroy(bg, sandboxID)
+		}
+		_ = e.st.AddEvent(bg, sessionID, "voided",
+			map[string]any{"reason": "reset_failed", "error": err.Error()})
+		_ = e.st.EndSession(bg, sessionID, "voided", nil)
+		return err
+	}
 	sb, err := e.rt.Create(ctx, e.specFor(ex, sessionID))
 	if err != nil {
-		return fmt.Errorf("recreate sandbox: %w", err)
+		return void("", fmt.Errorf("recreate sandbox: %w", err))
 	}
 	if err := e.st.SetSandbox(ctx, sessionID, sb.ID); err != nil {
-		return err
+		return void(sb.ID, err)
 	}
 	if _, err := e.prepare(ctx, sb.ID, ex, scriptEnv(sess.Seed, sess.VariantValues)); err != nil {
-		return err
+		return void(sb.ID, err)
 	}
 	return e.st.AddEvent(ctx, sessionID, "reset", nil)
 }

@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"regexp"
 	"time"
 
 	"github.com/DIZAMU/RootCause/internal/store"
@@ -21,7 +22,8 @@ func NewReaper(eng *Engine, st *store.Store, interval time.Duration) *Reaper {
 	return &Reaper{eng: eng, st: st, interval: interval}
 }
 
-// ReapOnce expires every session past its TTL and returns how many it expired.
+// ReapOnce expires every session past its TTL, then reclaims orphaned
+// sandboxes. It returns how many sessions it expired.
 func (r *Reaper) ReapOnce(ctx context.Context) (int, error) {
 	due, err := r.st.DueSessions(ctx)
 	if err != nil {
@@ -32,7 +34,44 @@ func (r *Reaper) ReapOnce(ctx context.Context) (int, error) {
 			return 0, err
 		}
 	}
+	if _, err := r.ReclaimOrphans(ctx); err != nil {
+		return len(due), err
+	}
 	return len(due), nil
+}
+
+// sessionIDPattern matches the ids newID makes.
+var sessionIDPattern = regexp.MustCompile(`^s-[0-9a-f]{16}$`)
+
+// ReclaimOrphans destroys running sandboxes whose session is no longer
+// active, for example after a crash between ending a session and destroying
+// its sandbox. It returns how many it destroyed. It only touches sandboxes
+// that this database started, labelled with a session id in the newID format,
+// and never a selftest sandbox; anything it does not recognise is left alone.
+func (r *Reaper) ReclaimOrphans(ctx context.Context) (int, error) {
+	active, err := r.st.ActiveSessionIDs(ctx)
+	if err != nil {
+		return 0, err
+	}
+	boxes, err := r.eng.rt.List(ctx)
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, b := range boxes {
+		id := b.Labels[labelSession]
+		if b.Labels[labelSelftest] == "true" ||
+			b.Labels[labelDatabase] != r.st.Database() ||
+			!sessionIDPattern.MatchString(id) ||
+			active[id] {
+			continue
+		}
+		if err := r.eng.rt.Destroy(ctx, b.ID); err != nil {
+			return n, err
+		}
+		n++
+	}
+	return n, nil
 }
 
 // Run reaps on a ticker until the context is cancelled.

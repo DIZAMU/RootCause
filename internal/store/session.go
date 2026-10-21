@@ -118,6 +118,24 @@ func (s *Store) DueSessions(ctx context.Context) ([]Session, error) {
 	return out, rows.Err()
 }
 
+// ActiveSessionIDs returns the ids of every active session, for any learner.
+func (s *Store) ActiveSessionIDs(ctx context.Context) (map[string]bool, error) {
+	rows, err := s.pool.Query(ctx, `SELECT id FROM session WHERE status = 'active'`)
+	if err != nil {
+		return nil, fmt.Errorf("active session ids: %w", err)
+	}
+	defer rows.Close()
+	ids := make(map[string]bool)
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids[id] = true
+	}
+	return ids, rows.Err()
+}
+
 // ActiveSession returns the learner's single active session, or ErrNoRows.
 func (s *Store) ActiveSession(ctx context.Context, learnerID int) (Session, error) {
 	row := s.pool.QueryRow(ctx, `SELECT `+sessionColumns+`

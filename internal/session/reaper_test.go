@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DIZAMU/RootCause/internal/exercise"
 	"github.com/DIZAMU/RootCause/internal/runtime/docker"
 	"github.com/DIZAMU/RootCause/internal/store"
 )
@@ -28,20 +29,20 @@ func TestReaperExpiresDueSession(t *testing.T) {
 	if err != nil {
 		t.Skip("db not reachable:", err)
 	}
-	defer st.Close()
+	t.Cleanup(st.Close)
 	if err := st.Migrate(ctx); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	learner, _ := st.EnsureLearner(ctx, "DIZAMU")
 
 	rt, err := docker.New()
 	if err != nil {
 		t.Skip("docker runtime:", err)
 	}
+	learnerID := testLearner(t, st, rt)
 	exDir, _ := filepath.Abs("../../exercises")
 	eng := New(rt, rt, rt, st, exDir)
 
-	sess, err := eng.Start(ctx, learner.ID, "svc-01-intranet-config", 1)
+	sess, err := eng.Start(ctx, learnerID, "svc-01-intranet-config", 1)
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -87,5 +88,90 @@ func TestReaperExpiresDueSession(t *testing.T) {
 	}
 	if !hasExpired {
 		t.Error("no expired event logged")
+	}
+}
+
+// TestReaperReclaimsOrphans starts four sandboxes from the svc-01 image and
+// checks that ReclaimOrphans destroys only the one that is really an orphan of
+// this database: the selftest sandbox, the sandbox owned by another database
+// and the sandbox of an active session all survive.
+func TestReaperReclaimsOrphans(t *testing.T) {
+	dsn := store.TestDSN()
+	if dsn == "" {
+		t.Skip("RC_TEST_DATABASE_URL not set to a database ending in _test")
+	}
+	if err := exec.Command("docker", "info").Run(); err != nil {
+		t.Skip("docker not reachable:", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	st, err := store.Open(ctx, dsn)
+	if err != nil {
+		t.Skip("db not reachable:", err)
+	}
+	t.Cleanup(st.Close)
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	rt, err := docker.New()
+	if err != nil {
+		t.Skip("docker runtime:", err)
+	}
+	learnerID := testLearner(t, st, rt)
+	exDir, _ := filepath.Abs("../../exercises")
+	eng := New(rt, rt, rt, st, exDir)
+
+	// An active session whose sandbox must survive.
+	active, err := eng.Start(ctx, learnerID, "svc-01-intranet-config", 1)
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+
+	ex, err := exercise.Load(filepath.Join(exDir, "svc-01-intranet-config"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	orphanID := newID() // a well-formed id with no session row
+	cases := map[string]map[string]string{
+		"orphan":         {labelSession: orphanID, labelDatabase: st.Database()},
+		"selftest":       {labelSession: newID(), labelDatabase: st.Database(), labelSelftest: "true"},
+		"other database": {labelSession: newID(), labelDatabase: "some_other_db"},
+	}
+	ids := make(map[string]string)
+	for name, labels := range cases {
+		spec := eng.specFor(ex, "reaper-test-"+newID())
+		spec.Labels = labels
+		sb, err := rt.Create(ctx, spec)
+		if err != nil {
+			t.Fatalf("create %s sandbox: %v", name, err)
+		}
+		ids[name] = sb.ID
+		t.Cleanup(func() { _ = rt.Destroy(context.Background(), sb.ID) })
+	}
+
+	n, err := NewReaper(eng, st, 0).ReclaimOrphans(ctx)
+	if err != nil {
+		t.Fatalf("reclaim: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("reclaimed %d sandboxes, want 1 (the orphan)", n)
+	}
+
+	running := make(map[string]bool)
+	boxes, _ := rt.List(ctx)
+	for _, b := range boxes {
+		running[b.ID] = true
+	}
+	if running[ids["orphan"]] {
+		t.Error("the orphan sandbox is still running")
+	}
+	for _, name := range []string{"selftest", "other database"} {
+		if !running[ids[name]] {
+			t.Errorf("the %s sandbox was destroyed; it must be left alone", name)
+		}
+	}
+	if !running[active.SandboxID] {
+		t.Error("the active session's sandbox was destroyed")
 	}
 }

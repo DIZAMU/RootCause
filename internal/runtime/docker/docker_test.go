@@ -139,6 +139,9 @@ func TestSandboxLifecycle(t *testing.T) {
 	for _, b := range boxes {
 		if b.Name == name {
 			found = true
+			if got := b.Labels["rootcause.session"]; got != "test-session" {
+				t.Errorf("List label rootcause.session = %q, want test-session (labels %v)", got, b.Labels)
+			}
 		}
 	}
 	if !found {

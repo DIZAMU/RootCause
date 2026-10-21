@@ -13,7 +13,8 @@ import (
 
 // Store wraps a connection pool.
 type Store struct {
-	pool *pgxpool.Pool
+	pool   *pgxpool.Pool
+	dbName string // the connected database's name, read once at Open
 }
 
 // Open connects to Postgres using the given DSN and verifies the connection.
@@ -25,12 +26,18 @@ func Open(ctx context.Context, dsn string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("connect: %w", err)
 	}
-	if err := pool.Ping(ctx); err != nil {
+	var dbName string
+	if err := pool.QueryRow(ctx, `SELECT current_database()`).Scan(&dbName); err != nil {
 		pool.Close()
 		return nil, fmt.Errorf("ping: %w", err)
 	}
-	return &Store{pool: pool}, nil
+	return &Store{pool: pool, dbName: dbName}, nil
 }
+
+// Database returns the name of the connected database. Sandboxes are labelled
+// with it, so a reaper only reclaims sandboxes that its own database started:
+// the real profile and the test database share one Docker daemon.
+func (s *Store) Database() string { return s.dbName }
 
 // Close releases the pool.
 func (s *Store) Close() {
