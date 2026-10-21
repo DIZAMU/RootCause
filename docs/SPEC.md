@@ -72,7 +72,8 @@ New IT and operations staff learn troubleshooting on production systems or not a
 ```
 exercises/svc-01-intranet-config/
 ├── exercise.yaml      metadata and runtime settings
-├── Dockerfile         builds the healthy machine
+├── Dockerfile         builds the base machine (no exercise scripts inside)
+├── setup.sh           optional: builds the healthy state at session start
 ├── break.sh           plants the fault at session start
 ├── check.sh           grades the end state
 ├── solution.sh        reference fix, used only by CI
@@ -103,6 +104,11 @@ variants:
 ```
 
 ### 4.3 Script contracts
+
+**setup.sh** (optional)
+- Builds the healthy state from the variant values, for example rendering a config and starting a service.
+- Receives the same environment variables as break.sh. Copied in, run as root, then deleted, before break.sh.
+- Exists so the healthy state is never baked into the image, where the learner could read it or re-run it as a shortcut.
 
 **break.sh**
 - Receives `RC_SEED` and every variant value as `RC_VAR_<NAME>` environment variables.
@@ -258,7 +264,7 @@ Implementations: `internal/runtime/docker` (v1) and `internal/runtime/kubernetes
 
 1. The selector picks an exercise and a seed.
 2. The runtime creates the sandbox from the exercise image with its resource limits and network mode.
-3. break.sh is copied in, run with the seed and variant values, then deleted. Derived values are stored with the session.
+3. setup.sh (if present) and then break.sh are copied in, run with the seed and variant values, then deleted. The values are passed only to these commands, never to the sandbox environment. Derived values are stored with the session.
 4. The ticket is shown in the CLI and the dashboard.
 5. The learner works. Hints, checks and resets are logged as events.
 6. On check: optional restart, then check.sh runs in the sandbox or from the runner, and the result is logged.
