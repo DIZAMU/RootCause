@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -57,8 +58,9 @@ type LevelChange struct {
 	To    int
 }
 
-// Start creates a session and its sandbox, plants the fault, and logs
-// session_started. The seed makes the variant and fault reproducible.
+// Start creates a session and its sandbox, builds the healthy state, plants the
+// fault, and logs session_started. The seed makes the variant and fault
+// reproducible.
 func (e *Engine) Start(ctx context.Context, learnerID int, exerciseID string, seed int64) (store.Session, error) {
 	ex, err := exercise.Load(filepath.Join(e.exDir, exerciseID))
 	if err != nil {
@@ -100,11 +102,13 @@ func (e *Engine) Start(ctx context.Context, learnerID int, exerciseID string, se
 			if sandboxID != "" {
 				_ = e.rt.Destroy(context.Background(), sandboxID)
 			}
+			_ = e.st.AddEvent(context.Background(), sessionID, "voided",
+				map[string]any{"reason": "start_failed", "error": err.Error()})
 			_ = e.st.EndSession(context.Background(), sessionID, "voided", nil)
 		}
 	}()
 
-	sb, err := e.rt.Create(ctx, e.specFor(ex, sessionID, seed, variant))
+	sb, err := e.rt.Create(ctx, e.specFor(ex, sessionID))
 	if err != nil {
 		return store.Session{}, fmt.Errorf("create sandbox: %w", err)
 	}
@@ -115,8 +119,8 @@ func (e *Engine) Start(ctx context.Context, learnerID int, exerciseID string, se
 	}
 
 	var derived map[string]any
-	if derived, err = e.runBreak(ctx, sandboxID, ex); err != nil {
-		return store.Session{}, fmt.Errorf("plant fault: %w", err)
+	if derived, err = e.prepare(ctx, sandboxID, ex, scriptEnv(seed, variant)); err != nil {
+		return store.Session{}, err
 	}
 	if err = e.st.SetDerived(ctx, sessionID, derived); err != nil {
 		return store.Session{}, err
@@ -134,15 +138,10 @@ func (e *Engine) Start(ctx context.Context, learnerID int, exerciseID string, se
 }
 
 // specFor builds the sandbox spec for an exercise session.
-func (e *Engine) specFor(ex *exercise.Exercise, sessionID string, seed int64, variant map[string]string) runtime.SandboxSpec {
-	env := map[string]string{"RC_SEED": strconv.FormatInt(seed, 10)}
-	for k, v := range variant {
-		env["RC_VAR_"+envName(k)] = v
-	}
+func (e *Engine) specFor(ex *exercise.Exercise, sessionID string) runtime.SandboxSpec {
 	return runtime.SandboxSpec{
 		Name:    "rootcause-" + sessionID,
 		Image:   imageTag(ex),
-		Env:     env,
 		Memory:  ex.Resources.Memory,
 		CPUs:    ex.Resources.CPUs,
 		Network: ex.Network,
@@ -151,12 +150,24 @@ func (e *Engine) specFor(ex *exercise.Exercise, sessionID string, seed int64, va
 	}
 }
 
-// runBreak copies break.sh in, runs it as root, deletes it, and returns the
-// derived values it printed (spec section 4.3).
-func (e *Engine) runBreak(ctx context.Context, sandboxID string, ex *exercise.Exercise) (map[string]any, error) {
-	res, err := e.execScript(ctx, sandboxID, ex.Dir(), "break.sh")
+// prepare turns a fresh sandbox into the broken machine: it runs setup.sh (if
+// the exercise has one) to build the healthy state, then break.sh to plant the
+// fault, and returns the derived values break.sh printed (spec section 4.3).
+// Both scripts are copied in, run as root and deleted, so neither the healthy
+// config nor the fault logic stays readable inside the sandbox.
+func (e *Engine) prepare(ctx context.Context, sandboxID string, ex *exercise.Exercise, env map[string]string) (map[string]any, error) {
+	if _, err := os.Stat(filepath.Join(ex.Dir(), "setup.sh")); err == nil {
+		res, err := e.execScript(ctx, sandboxID, ex.Dir(), "setup.sh", env)
+		if err != nil {
+			return nil, fmt.Errorf("setup: %w", err)
+		}
+		if res.ExitCode != 0 {
+			return nil, fmt.Errorf("setup.sh exited %d: %s", res.ExitCode, strings.TrimSpace(string(res.Stderr)))
+		}
+	}
+	res, err := e.execScript(ctx, sandboxID, ex.Dir(), "break.sh", env)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("plant fault: %w", err)
 	}
 	if res.ExitCode != 0 {
 		return nil, fmt.Errorf("break.sh exited %d: %s", res.ExitCode, strings.TrimSpace(string(res.Stderr)))
@@ -183,13 +194,20 @@ func (e *Engine) Check(ctx context.Context, sessionID string) (CheckResult, erro
 		time.Sleep(time.Second)
 	}
 
-	res, err := e.execScript(ctx, sess.SandboxID, ex.Dir(), "check.sh")
+	res, err := e.execScript(ctx, sess.SandboxID, ex.Dir(), "check.sh", scriptEnv(sess.Seed, sess.VariantValues))
 	if err != nil {
 		return CheckResult{}, fmt.Errorf("run check: %w", err)
 	}
 
+	// Exit 0 is a pass and exit 1 a fail (spec section 4.3). Exit 2, or any
+	// other code (a crash, an out-of-memory kill), means the check could not
+	// run, so it must never count against the learner.
 	parsed := parseCheck(res.Stdout)
-	result := CheckResult{Passed: res.ExitCode == 0 && parsed.Passed, Feedback: parsed.Feedback, Infra: res.ExitCode == 2}
+	result := CheckResult{
+		Passed:   res.ExitCode == 0 && parsed.Passed,
+		Feedback: parsed.Feedback,
+		Infra:    res.ExitCode != 0 && res.ExitCode != 1,
+	}
 
 	if err := e.st.AddEvent(ctx, sessionID, "check_run", map[string]any{
 		"passed": result.Passed, "feedback": result.Feedback, "exit": res.ExitCode,
@@ -291,14 +309,14 @@ func (e *Engine) Reset(ctx context.Context, sessionID string) error {
 	}
 	_ = e.rt.Destroy(ctx, sess.SandboxID)
 
-	sb, err := e.rt.Create(ctx, e.specFor(ex, sessionID, sess.Seed, sess.VariantValues))
+	sb, err := e.rt.Create(ctx, e.specFor(ex, sessionID))
 	if err != nil {
 		return fmt.Errorf("recreate sandbox: %w", err)
 	}
 	if err := e.st.SetSandbox(ctx, sessionID, sb.ID); err != nil {
 		return err
 	}
-	if _, err := e.runBreak(ctx, sb.ID, ex); err != nil {
+	if _, err := e.prepare(ctx, sb.ID, ex, scriptEnv(sess.Seed, sess.VariantValues)); err != nil {
 		return err
 	}
 	return e.st.AddEvent(ctx, sessionID, "reset", nil)
@@ -368,7 +386,11 @@ func (e *Engine) Shell(ctx context.Context, sessionID string) error {
 // setting an execute bit, because under cap-drop + userns the copied file is
 // owned by a UID the sandbox root cannot chmod. The caller decides what a
 // non-zero exit means (an error for break, a graded result for check).
-func (e *Engine) execScript(ctx context.Context, sandboxID, dir, name string) (runtime.ExecResult, error) {
+//
+// env is passed to this one command through `env NAME=value ...`, never to the
+// container, so the learner cannot read the seed or variant values. Each value
+// is its own argument, so nothing is interpreted by a shell.
+func (e *Engine) execScript(ctx context.Context, sandboxID, dir, name string, env map[string]string) (runtime.ExecResult, error) {
 	data, err := os.ReadFile(filepath.Join(dir, name))
 	if err != nil {
 		return runtime.ExecResult{}, err
@@ -377,8 +399,31 @@ func (e *Engine) execScript(ctx context.Context, sandboxID, dir, name string) (r
 	if err := e.rt.CopyIn(ctx, sandboxID, path, data); err != nil {
 		return runtime.ExecResult{}, err
 	}
-	return e.rt.Exec(ctx, sandboxID,
-		[]string{"bash", "-c", fmt.Sprintf("bash %s; rc=$?; rm -f %s; exit $rc", path, path)}, nil)
+	cmd := []string{"env"}
+	for _, k := range sortedKeys(env) {
+		cmd = append(cmd, k+"="+env[k])
+	}
+	cmd = append(cmd, "bash", "-c", `bash "$0"; rc=$?; rm -f "$0"; exit $rc`, path)
+	return e.rt.Exec(ctx, sandboxID, cmd, nil)
+}
+
+// scriptEnv builds the RC_SEED and RC_VAR_<NAME> values the exercise scripts
+// receive (spec section 4.3).
+func scriptEnv(seed int64, variant map[string]string) map[string]string {
+	env := map[string]string{"RC_SEED": strconv.FormatInt(seed, 10)}
+	for k, v := range variant {
+		env["RC_VAR_"+envName(k)] = v
+	}
+	return env
+}
+
+func sortedKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // --- helpers ---------------------------------------------------------------

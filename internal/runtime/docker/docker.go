@@ -1,7 +1,8 @@
 // Package docker implements runtime.Runtime by shelling out to the docker CLI.
 // Every sandbox is created locked down (spec section 13.1): all Linux
 // capabilities dropped, memory/CPU/process limits, no privileged mode, no
-// Docker socket, and network "none" or an internal-only network.
+// Docker socket, an init process as PID 1, and network "none" or an
+// internal-only network.
 package docker
 
 import (
@@ -59,6 +60,7 @@ func (r *Runtime) Create(ctx context.Context, spec runtime.SandboxSpec) (runtime
 	args := []string{
 		"run", "-d",
 		"--name", spec.Name,
+		"--init", // a real PID 1 that reaps stopped processes (no zombies)
 		"--cap-drop", "ALL",
 		"--security-opt", "no-new-privileges",
 		"--pids-limit", fmt.Sprintf("%d", pids),
@@ -73,9 +75,6 @@ func (r *Runtime) Create(ctx context.Context, spec runtime.SandboxSpec) (runtime
 	}
 	if spec.CPUs > 0 {
 		args = append(args, "--cpus", fmt.Sprintf("%g", spec.CPUs))
-	}
-	for k, v := range spec.Env {
-		args = append(args, "-e", k+"="+v)
 	}
 	for k, v := range spec.Labels {
 		args = append(args, "--label", k+"="+v)
@@ -94,6 +93,30 @@ func (r *Runtime) Create(ctx context.Context, spec runtime.SandboxSpec) (runtime
 		Created: time.Now(),
 		Labels:  spec.Labels,
 	}, nil
+}
+
+// CheckIsolation verifies that root inside a sandbox is not root on the host
+// (spec section 13.1, OQ-3): the daemon must run with user namespace
+// remapping or in rootless mode. It returns an error otherwise.
+func (r *Runtime) CheckIsolation(ctx context.Context) error {
+	out, errOut, err := r.run(ctx, nil, "info", "--format", "{{json .SecurityOptions}}")
+	if err != nil {
+		return fmt.Errorf("docker info: %w: %s", err, strings.TrimSpace(errOut))
+	}
+	if !isolated(string(out)) {
+		return ErrNotIsolated
+	}
+	return nil
+}
+
+// ErrNotIsolated means the Docker daemon maps container root to host root.
+var ErrNotIsolated = errors.New("docker daemon runs without userns-remap or rootless mode")
+
+// isolated reports whether docker info security options show user namespace
+// remapping ("name=userns") or rootless mode ("name=rootless").
+func isolated(securityOptions string) bool {
+	return strings.Contains(securityOptions, "name=userns") ||
+		strings.Contains(securityOptions, "name=rootless")
 }
 
 // Exec runs a command in the sandbox and captures its output and exit code.
@@ -228,4 +251,3 @@ func dockerMemory(mem string) string {
 	mem = strings.ReplaceAll(mem, "Gi", "g")
 	return mem
 }
-
