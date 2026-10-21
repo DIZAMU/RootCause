@@ -1,0 +1,434 @@
+// Package session runs the exercise lifecycle (spec section 8.4): it creates a
+// sandbox from an exercise, plants the fault, grades checks, and logs every
+// action as an event. It wires the exercise loader, the runtime and the store
+// together and is the engine the CLI drives.
+package session
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/DIZAMU/RootCause/internal/exercise"
+	"github.com/DIZAMU/RootCause/internal/grading"
+	"github.com/DIZAMU/RootCause/internal/runtime"
+	"github.com/DIZAMU/RootCause/internal/store"
+)
+
+// Builder builds an exercise image. The docker runtime implements it.
+type Builder interface {
+	BuildImage(ctx context.Context, tag, dir string) error
+}
+
+// Engine orchestrates sessions.
+type Engine struct {
+	rt      runtime.Runtime
+	builder Builder
+	sheller runtime.Sheller
+	st      *store.Store
+	exDir   string
+}
+
+// New builds an Engine. exercisesDir is the folder holding exercise folders.
+func New(rt runtime.Runtime, builder Builder, sheller runtime.Sheller, st *store.Store, exercisesDir string) *Engine {
+	return &Engine{rt: rt, builder: builder, sheller: sheller, st: st, exDir: exercisesDir}
+}
+
+// CheckResult is the outcome of grading a session.
+type CheckResult struct {
+	Passed   bool
+	Feedback string
+	Infra    bool         // true if the check could not run (exit 2); the session is voided
+	Stars    int          // stars awarded, when Passed
+	Level    *LevelChange // set if this result changed the topic level
+}
+
+// LevelChange records a topic moving up or down a level.
+type LevelChange struct {
+	Topic string
+	From  int
+	To    int
+}
+
+// Start creates a session and its sandbox, plants the fault, and logs
+// session_started. The seed makes the variant and fault reproducible.
+func (e *Engine) Start(ctx context.Context, learnerID int, exerciseID string, seed int64) (store.Session, error) {
+	ex, err := exercise.Load(filepath.Join(e.exDir, exerciseID))
+	if err != nil {
+		return store.Session{}, err
+	}
+
+	// Make sure the catalog row exists (FK target for the session).
+	if err := e.st.SyncExercises(ctx, []store.ExerciseRow{
+		{ID: ex.ID, Version: ex.Version, Topic: ex.Topic, Difficulty: ex.Difficulty},
+	}); err != nil {
+		return store.Session{}, err
+	}
+
+	tag := imageTag(ex)
+	if err := e.builder.BuildImage(ctx, tag, ex.Dir()); err != nil {
+		return store.Session{}, err
+	}
+
+	variant := ex.SelectVariant(seed)
+	sessionID := newID()
+	if _, err = e.st.CreateSession(ctx, store.NewSession{
+		ID:              sessionID,
+		LearnerID:       learnerID,
+		ExerciseID:      ex.ID,
+		ExerciseVersion: ex.Version,
+		Seed:            seed,
+		VariantValues:   variant,
+		TTL:             time.Duration(ex.SessionTTLMin) * time.Minute,
+	}); err != nil {
+		return store.Session{}, err
+	}
+
+	// Once the session row exists, undo it (and any sandbox) if setup fails, so
+	// a failed start never leaves a dangling active session or a leaked
+	// container. (The reaper is the backstop.)
+	var sandboxID string
+	defer func() {
+		if err != nil {
+			if sandboxID != "" {
+				_ = e.rt.Destroy(context.Background(), sandboxID)
+			}
+			_ = e.st.EndSession(context.Background(), sessionID, "voided", nil)
+		}
+	}()
+
+	sb, err := e.rt.Create(ctx, e.specFor(ex, sessionID, seed, variant))
+	if err != nil {
+		return store.Session{}, fmt.Errorf("create sandbox: %w", err)
+	}
+	sandboxID = sb.ID
+
+	if err = e.st.SetSandbox(ctx, sessionID, sandboxID); err != nil {
+		return store.Session{}, err
+	}
+
+	var derived map[string]any
+	if derived, err = e.runBreak(ctx, sandboxID, ex); err != nil {
+		return store.Session{}, fmt.Errorf("plant fault: %w", err)
+	}
+	if err = e.st.SetDerived(ctx, sessionID, derived); err != nil {
+		return store.Session{}, err
+	}
+
+	if err = e.st.AddEvent(ctx, sessionID, "session_started", map[string]any{
+		"exercise": ex.ID, "seed": seed, "variant": variant,
+	}); err != nil {
+		return store.Session{}, err
+	}
+
+	var started store.Session
+	started, err = e.st.SessionByID(ctx, sessionID)
+	return started, err
+}
+
+// specFor builds the sandbox spec for an exercise session.
+func (e *Engine) specFor(ex *exercise.Exercise, sessionID string, seed int64, variant map[string]string) runtime.SandboxSpec {
+	env := map[string]string{"RC_SEED": strconv.FormatInt(seed, 10)}
+	for k, v := range variant {
+		env["RC_VAR_"+envName(k)] = v
+	}
+	return runtime.SandboxSpec{
+		Name:    "rootcause-" + sessionID,
+		Image:   imageTag(ex),
+		Env:     env,
+		Memory:  ex.Resources.Memory,
+		CPUs:    ex.Resources.CPUs,
+		Network: ex.Network,
+		Caps:    ex.Capabilities,
+		Labels:  map[string]string{"rootcause.session": sessionID},
+	}
+}
+
+// runBreak copies break.sh in, runs it as root, deletes it, and returns the
+// derived values it printed (spec section 4.3).
+func (e *Engine) runBreak(ctx context.Context, sandboxID string, ex *exercise.Exercise) (map[string]any, error) {
+	res, err := e.execScript(ctx, sandboxID, ex.Dir(), "break.sh")
+	if err != nil {
+		return nil, err
+	}
+	if res.ExitCode != 0 {
+		return nil, fmt.Errorf("break.sh exited %d: %s", res.ExitCode, strings.TrimSpace(string(res.Stderr)))
+	}
+	return lastJSONObject(res.Stdout), nil
+}
+
+// Check grades the active session. It optionally restarts first (check.before),
+// runs check.sh, logs check_run, and on a pass marks the session solved and
+// destroys the sandbox. Stars/levels are applied in a later step.
+func (e *Engine) Check(ctx context.Context, sessionID string) (CheckResult, error) {
+	sess, err := e.st.SessionByID(ctx, sessionID)
+	if err != nil {
+		return CheckResult{}, err
+	}
+	ex, err := exercise.Load(filepath.Join(e.exDir, sess.ExerciseID))
+	if err != nil {
+		return CheckResult{}, err
+	}
+	if ex.Check.Before == "restart" {
+		if err := e.rt.Restart(ctx, sess.SandboxID); err != nil {
+			return CheckResult{}, err
+		}
+		time.Sleep(time.Second)
+	}
+
+	res, err := e.execScript(ctx, sess.SandboxID, ex.Dir(), "check.sh")
+	if err != nil {
+		return CheckResult{}, fmt.Errorf("run check: %w", err)
+	}
+
+	parsed := parseCheck(res.Stdout)
+	result := CheckResult{Passed: res.ExitCode == 0 && parsed.Passed, Feedback: parsed.Feedback, Infra: res.ExitCode == 2}
+
+	if err := e.st.AddEvent(ctx, sessionID, "check_run", map[string]any{
+		"passed": result.Passed, "feedback": result.Feedback, "exit": res.ExitCode,
+	}); err != nil {
+		return result, err
+	}
+
+	switch {
+	case result.Infra:
+		// Infrastructure error: void the session, it does not count.
+		_ = e.st.AddEvent(ctx, sessionID, "voided", map[string]any{"reason": "check_error"})
+		_ = e.st.EndSession(ctx, sessionID, "voided", nil)
+		_ = e.rt.Destroy(ctx, sess.SandboxID)
+	case result.Passed:
+		stars := grading.Stars(sess.HintsRevealed)
+		result.Stars = stars
+		if err := e.st.AddEvent(ctx, sessionID, "solved", map[string]any{"hints": sess.HintsRevealed, "stars": stars}); err != nil {
+			return result, err
+		}
+		if err := e.st.EndSession(ctx, sessionID, "solved", &stars); err != nil {
+			return result, err
+		}
+		_ = e.rt.Destroy(ctx, sess.SandboxID)
+		lc, err := e.applyLevel(ctx, sess.LearnerID, ex.Topic, sessionID)
+		if err != nil {
+			return result, err
+		}
+		result.Level = lc
+	}
+	return result, nil
+}
+
+// applyLevel recomputes the topic level from all its finished outcomes and, if
+// this session changed it, logs a level_changed event (spec section 7.1). It
+// returns the change, or nil if the level held.
+func (e *Engine) applyLevel(ctx context.Context, learnerID int, topic, sessionID string) (*LevelChange, error) {
+	outs, err := e.st.TopicOutcomes(ctx, learnerID, topic)
+	if err != nil {
+		return nil, err
+	}
+	if len(outs) == 0 {
+		return nil, nil
+	}
+	kinds := make([]grading.Kind, len(outs))
+	for i, o := range outs {
+		kinds[i] = grading.Classify(o.Status, o.Stars, o.HadCheck)
+	}
+	after := grading.Level(kinds)
+	before := grading.Level(kinds[:len(kinds)-1])
+	if after == before {
+		return nil, nil
+	}
+	lc := &LevelChange{Topic: topic, From: before, To: after}
+	if err := e.st.AddEvent(ctx, sessionID, "level_changed",
+		map[string]any{"topic": topic, "from": before, "to": after}); err != nil {
+		return nil, err
+	}
+	return lc, nil
+}
+
+// Hint reveals the next hint tier and logs hint_revealed. It returns the tier
+// number (1-based), capped at the number of hints the exercise defines.
+func (e *Engine) Hint(ctx context.Context, sessionID string) (int, error) {
+	sess, err := e.st.SessionByID(ctx, sessionID)
+	if err != nil {
+		return 0, err
+	}
+	ex, err := exercise.Load(filepath.Join(e.exDir, sess.ExerciseID))
+	if err != nil {
+		return 0, err
+	}
+	en, err := ex.LoadI18n("en")
+	if err != nil {
+		return 0, err
+	}
+	if sess.HintsRevealed >= len(en.Hints) {
+		return sess.HintsRevealed, nil // all hints already revealed
+	}
+	tier, err := e.st.IncHints(ctx, sessionID)
+	if err != nil {
+		return 0, err
+	}
+	if err := e.st.AddEvent(ctx, sessionID, "hint_revealed", map[string]any{"tier": tier}); err != nil {
+		return tier, err
+	}
+	return tier, nil
+}
+
+// Reset rebuilds the sandbox for the same variant and re-plants the fault,
+// keeping revealed hints. It logs reset (spec section 6).
+func (e *Engine) Reset(ctx context.Context, sessionID string) error {
+	sess, err := e.st.SessionByID(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	ex, err := exercise.Load(filepath.Join(e.exDir, sess.ExerciseID))
+	if err != nil {
+		return err
+	}
+	_ = e.rt.Destroy(ctx, sess.SandboxID)
+
+	sb, err := e.rt.Create(ctx, e.specFor(ex, sessionID, sess.Seed, sess.VariantValues))
+	if err != nil {
+		return fmt.Errorf("recreate sandbox: %w", err)
+	}
+	if err := e.st.SetSandbox(ctx, sessionID, sb.ID); err != nil {
+		return err
+	}
+	if _, err := e.runBreak(ctx, sb.ID, ex); err != nil {
+		return err
+	}
+	return e.st.AddEvent(ctx, sessionID, "reset", nil)
+}
+
+// GiveUp ends the session (0 stars) and logs gave_up. It is only allowed once
+// hint 3 has been revealed (spec section 6). It returns any level change.
+func (e *Engine) GiveUp(ctx context.Context, sessionID string) (*LevelChange, error) {
+	sess, err := e.st.SessionByID(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	if sess.HintsRevealed < 3 {
+		return nil, fmt.Errorf("give up becomes available only after hint 3")
+	}
+	ex, err := exercise.Load(filepath.Join(e.exDir, sess.ExerciseID))
+	if err != nil {
+		return nil, err
+	}
+	if err := e.st.AddEvent(ctx, sessionID, "gave_up", nil); err != nil {
+		return nil, err
+	}
+	zero := 0
+	if err := e.st.EndSession(ctx, sessionID, "gave_up", &zero); err != nil {
+		return nil, err
+	}
+	_ = e.rt.Destroy(ctx, sess.SandboxID)
+	return e.applyLevel(ctx, sess.LearnerID, ex.Topic, sessionID)
+}
+
+// Expire ends a session whose TTL has passed: it logs expired, marks the
+// session expired, destroys the sandbox, and applies the level rule (an expiry
+// after a check counts as a fail; see grading.Classify). Used by the reaper.
+func (e *Engine) Expire(ctx context.Context, sess store.Session) (*LevelChange, error) {
+	if err := e.st.AddEvent(ctx, sess.ID, "expired", nil); err != nil {
+		return nil, err
+	}
+	if err := e.st.EndSession(ctx, sess.ID, "expired", nil); err != nil {
+		return nil, err
+	}
+	_ = e.rt.Destroy(ctx, sess.SandboxID)
+
+	// Apply the level rule if we can determine the topic; a missing exercise
+	// definition should not block expiry.
+	ex, err := exercise.Load(filepath.Join(e.exDir, sess.ExerciseID))
+	if err != nil {
+		return nil, nil
+	}
+	return e.applyLevel(ctx, sess.LearnerID, ex.Topic, sess.ID)
+}
+
+// Shell opens an interactive shell in the session's sandbox (v1).
+func (e *Engine) Shell(ctx context.Context, sessionID string) error {
+	sess, err := e.st.SessionByID(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	if e.sheller == nil {
+		return fmt.Errorf("this runtime does not support an interactive shell")
+	}
+	return e.sheller.Shell(ctx, sess.SandboxID, []string{"/bin/bash"})
+}
+
+// execScript copies a script into the sandbox under /root (root-owned,
+// non-sticky), runs it as root with `bash`, deletes it, and returns the raw
+// result including the exit code. It invokes the script with `bash` rather than
+// setting an execute bit, because under cap-drop + userns the copied file is
+// owned by a UID the sandbox root cannot chmod. The caller decides what a
+// non-zero exit means (an error for break, a graded result for check).
+func (e *Engine) execScript(ctx context.Context, sandboxID, dir, name string) (runtime.ExecResult, error) {
+	data, err := os.ReadFile(filepath.Join(dir, name))
+	if err != nil {
+		return runtime.ExecResult{}, err
+	}
+	path := "/root/" + name
+	if err := e.rt.CopyIn(ctx, sandboxID, path, data); err != nil {
+		return runtime.ExecResult{}, err
+	}
+	return e.rt.Exec(ctx, sandboxID,
+		[]string{"bash", "-c", fmt.Sprintf("bash %s; rc=$?; rm -f %s; exit $rc", path, path)}, nil)
+}
+
+// --- helpers ---------------------------------------------------------------
+
+func imageTag(ex *exercise.Exercise) string {
+	return fmt.Sprintf("rootcause/%s:v%d", ex.ID, ex.Version)
+}
+
+// envName turns a variant name into the RC_VAR_<NAME> suffix (site_name -> SITE_NAME).
+func envName(name string) string {
+	return strings.ToUpper(strings.ReplaceAll(name, "-", "_"))
+}
+
+func newID() string {
+	b := make([]byte, 8)
+	_, _ = rand.Read(b)
+	return "s-" + hex.EncodeToString(b)
+}
+
+type checkOut struct {
+	Passed   bool   `json:"passed"`
+	Feedback string `json:"feedback"`
+}
+
+// parseCheck reads the last JSON object printed by check.sh.
+func parseCheck(stdout []byte) checkOut {
+	var c checkOut
+	if line := lastJSONLine(stdout); line != "" {
+		_ = json.Unmarshal([]byte(line), &c)
+	}
+	return c
+}
+
+// lastJSONObject decodes the last JSON object line into a generic map.
+func lastJSONObject(stdout []byte) map[string]any {
+	m := map[string]any{}
+	if line := lastJSONLine(stdout); line != "" {
+		_ = json.Unmarshal([]byte(line), &m)
+	}
+	return m
+}
+
+// lastJSONLine returns the last non-empty line that looks like a JSON object.
+func lastJSONLine(stdout []byte) string {
+	lines := strings.Split(strings.TrimSpace(string(stdout)), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		s := strings.TrimSpace(lines[i])
+		if strings.HasPrefix(s, "{") && strings.HasSuffix(s, "}") {
+			return s
+		}
+	}
+	return ""
+}
