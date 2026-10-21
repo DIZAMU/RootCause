@@ -1,0 +1,7 @@
+# Secrets: local env files are never committed (spec section 13.2).
+.env
+# Compiled binary and build output.
+/rootcause
+/bin/
+# Go test binaries.
+*.test
