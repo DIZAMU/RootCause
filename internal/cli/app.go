@@ -118,6 +118,22 @@ func (a *App) say(key string, vars map[string]string) {
 	fmt.Fprintln(a.out, a.t(key, vars))
 }
 
+// Usage returns the help text in lang. With no profile loaded yet, the CLI
+// passes English.
+func Usage(lang string) string {
+	b, err := i18n.Load(locales.FS)
+	if err != nil {
+		return err.Error()
+	}
+	return b.T(lang, "help.usage", nil)
+}
+
+// UnknownCommand returns the help text for an unknown command, in the
+// learner's language.
+func (a *App) UnknownCommand(cmd string) string {
+	return a.t("help.unknown_command", map[string]string{"command": cmd}) + "\n\n" + a.t("help.usage", nil)
+}
+
 // Describe renders a command's error for the learner, in their language.
 func (a *App) Describe(err error) string { return Message(a.bundle, a.lang(), err) }
 
