@@ -12,6 +12,7 @@
   "hint.revealed": "Hint {tier}: {text}",
   "check.pass": "Løst. Bra jobbet.",
   "check.fail": "Ikke løst ennå: {feedback}",
+  "check.fail_generic": "Ikke løst ennå.",
   "check.infra": "Sjekken kunne ikke kjøre, så denne økten teller ikke.",
   "reset.done": "En ny kopi av samme problem er klar. Hint som er vist, forblir vist.",
   "giveup.locked": "Gi opp låses opp etter at du har vist hint 3.",

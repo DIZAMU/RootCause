@@ -12,6 +12,7 @@
   "hint.revealed": "Hint {tier}: {text}",
   "check.pass": "Solved. Well done.",
   "check.fail": "Not solved yet: {feedback}",
+  "check.fail_generic": "Not solved yet.",
   "check.infra": "The check could not run, so this session does not count.",
   "reset.done": "A fresh copy of the same problem is ready. Revealed hints stay revealed.",
   "giveup.locked": "Give up unlocks after you have revealed hint 3.",

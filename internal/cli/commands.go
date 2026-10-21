@@ -122,9 +122,19 @@ func (a *App) Check(ctx context.Context) error {
 			a.announceLevel(res.Level)
 		}
 	default:
-		a.say("check.fail", map[string]string{"feedback": i18n.Fill(texts.Feedback[res.Feedback], vars)})
+		if fb := feedbackText(texts, res.Feedback, vars); fb != "" {
+			a.say("check.fail", map[string]string{"feedback": fb})
+		} else {
+			a.say("check.fail_generic", nil)
+		}
 	}
 	return nil
+}
+
+// feedbackText returns the exercise's symptom text for a check's feedback key,
+// with placeholders filled, or "" if the exercise has no text for that key.
+func feedbackText(texts *exercise.I18n, key string, vars map[string]string) string {
+	return strings.TrimSpace(i18n.Fill(texts.Feedback[key], vars))
 }
 
 // Reset gives a fresh copy of the same variant.
