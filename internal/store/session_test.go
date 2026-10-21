@@ -17,6 +17,11 @@ func fixture(t *testing.T, s *Store, difficulty int) (learnerID int, exerciseID 
 	if err := s.Migrate(ctx); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
+	// Make sure the profile learner exists first. It then keeps the lowest id,
+	// so EnsureLearner never returns a test learner.
+	if _, err := s.EnsureLearner(ctx, "DIZAMU"); err != nil {
+		t.Fatalf("ensure profile learner: %v", err)
+	}
 	exerciseID = fmt.Sprintf("store-test-%d", time.Now().UnixNano())
 	if err := s.SyncExercises(ctx, []ExerciseRow{
 		{ID: exerciseID, Version: 1, Topic: "disk", Difficulty: difficulty},
@@ -29,10 +34,19 @@ func fixture(t *testing.T, s *Store, difficulty int) (learnerID int, exerciseID 
 	}
 	t.Cleanup(func() {
 		ctx := context.Background()
-		_, _ = s.pool.Exec(ctx, `DELETE FROM event WHERE session_id IN (SELECT id FROM session WHERE learner_id = $1)`, learnerID)
-		_, _ = s.pool.Exec(ctx, `DELETE FROM session WHERE learner_id = $1`, learnerID)
-		_, _ = s.pool.Exec(ctx, `DELETE FROM learner WHERE id = $1`, learnerID)
-		_, _ = s.pool.Exec(ctx, `DELETE FROM exercise WHERE id = $1`, exerciseID)
+		for _, step := range []struct {
+			sql string
+			arg any
+		}{
+			{`DELETE FROM event WHERE session_id IN (SELECT id FROM session WHERE learner_id = $1)`, learnerID},
+			{`DELETE FROM session WHERE learner_id = $1`, learnerID},
+			{`DELETE FROM learner WHERE id = $1`, learnerID},
+			{`DELETE FROM exercise WHERE id = $1`, exerciseID},
+		} {
+			if _, err := s.pool.Exec(ctx, step.sql, step.arg); err != nil {
+				t.Errorf("cleanup %q: %v", step.sql, err)
+			}
+		}
 	})
 	return learnerID, exerciseID
 }
@@ -46,7 +60,6 @@ func newSession(learnerID int, exerciseID, id string, difficulty int) NewSession
 
 func TestOneActiveSession(t *testing.T) {
 	s := openOrSkip(t)
-	defer s.Close()
 	ctx := context.Background()
 	lid, xid := fixture(t, s, 1)
 
@@ -69,7 +82,6 @@ func TestOneActiveSession(t *testing.T) {
 
 func TestDifficultyFrozenAtStart(t *testing.T) {
 	s := openOrSkip(t)
-	defer s.Close()
 	ctx := context.Background()
 	lid, xid := fixture(t, s, 1)
 

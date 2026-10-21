@@ -7,6 +7,9 @@ import (
 )
 
 // openOrSkip connects to the test database, or skips if none is configured.
+// The store is closed by t.Cleanup. Cleanups run in reverse order, so this
+// one runs after every cleanup the test registers later, which still need the
+// connection. (A deferred Close would run before them.)
 func openOrSkip(t *testing.T) *Store {
 	t.Helper()
 	dsn := TestDSN()
@@ -19,12 +22,12 @@ func openOrSkip(t *testing.T) *Store {
 	if err != nil {
 		t.Skip("database not reachable:", err)
 	}
+	t.Cleanup(s.Close)
 	return s
 }
 
 func TestMigrateAndSync(t *testing.T) {
 	s := openOrSkip(t)
-	defer s.Close()
 	ctx := context.Background()
 
 	// Migrate is idempotent.
