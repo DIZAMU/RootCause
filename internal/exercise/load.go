@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // requiredFiles must exist in every exercise folder (spec section 4.1).

@@ -3,7 +3,7 @@ package exercise
 import (
 	"fmt"
 
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // StringList is a YAML sequence whose scalar values are all kept as strings,
