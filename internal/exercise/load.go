@@ -32,6 +32,7 @@ var (
 	validBefore    = map[string]bool{"none": true, "restart": true}
 	idPattern      = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 	memoryPattern  = regexp.MustCompile(`^[0-9]+(Mi|Gi)$`)
+	capPattern     = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
 )
 
 // Load reads exercise.yaml from dir, then validates the schema, the required
@@ -110,6 +111,11 @@ func (e *Exercise) validateSchema() error {
 	for name, values := range e.Variants {
 		if len(values) == 0 {
 			add("variant %q has no values", name)
+		}
+	}
+	for _, c := range e.Capabilities {
+		if !capPattern.MatchString(c) {
+			add("capability %q must be an uppercase name like SETUID", c)
 		}
 	}
 	return errors.Join(p...)

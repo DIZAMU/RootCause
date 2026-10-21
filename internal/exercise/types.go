@@ -19,6 +19,10 @@ type Exercise struct {
 	SessionTTLMin    int       `yaml:"session_ttl_minutes"`
 	Check            Check     `yaml:"check"`
 
+	// Capabilities are the Linux capabilities the sandbox adds back after
+	// dropping all of them (spec section 13.1). Empty means none are needed.
+	Capabilities []string `yaml:"capabilities"`
+
 	// Variants maps a variant name (e.g. "port") to its allowed values.
 	// Values may be written as strings or numbers in YAML; both are stored as
 	// strings, because they end up as RC_VAR_<NAME> environment variables.

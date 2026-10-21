@@ -11,6 +11,9 @@ session_ttl_minutes: 60
 check:
   runs_from: sandbox
   before: none
+# nginx drops privileges to the "nginx" user for its workers, which needs these
+# after the sandbox drops all capabilities.
+capabilities: [SETUID, SETGID, CHOWN]
 variants:
   site_name: [intranet, wiki, portal]
   port: [8080, 8081, 8088]
