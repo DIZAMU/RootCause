@@ -78,7 +78,7 @@ func runApp(ctx context.Context, cmd string, args []string) int {
 		return 2
 	}
 	if cmdErr != nil {
-		fmt.Fprintln(os.Stderr, cmdErr)
+		fmt.Fprintln(os.Stderr, app.Describe(cmdErr))
 		return 1
 	}
 	return 0

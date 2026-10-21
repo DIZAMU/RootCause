@@ -9,6 +9,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,6 +22,14 @@ import (
 	"github.com/DIZAMU/RootCause/internal/grading"
 	"github.com/DIZAMU/RootCause/internal/runtime"
 	"github.com/DIZAMU/RootCause/internal/store"
+)
+
+// Errors the CLI turns into translated messages (spec section 12).
+var (
+	// ErrGiveUpTooEarly means give up was asked for before hint 3.
+	ErrGiveUpTooEarly = errors.New("give up is only available after hint 3")
+	// ErrNoShell means the runtime cannot open an interactive shell.
+	ErrNoShell = errors.New("runtime has no interactive shell")
 )
 
 // Builder builds an exercise image. The docker runtime implements it.
@@ -86,6 +95,7 @@ func (e *Engine) Start(ctx context.Context, learnerID int, exerciseID string, se
 		LearnerID:       learnerID,
 		ExerciseID:      ex.ID,
 		ExerciseVersion: ex.Version,
+		Difficulty:      ex.Difficulty,
 		Seed:            seed,
 		VariantValues:   variant,
 		TTL:             time.Duration(ex.SessionTTLMin) * time.Minute,
@@ -349,7 +359,7 @@ func (e *Engine) GiveUp(ctx context.Context, sessionID string) (*LevelChange, er
 		return nil, err
 	}
 	if sess.HintsRevealed < 3 {
-		return nil, fmt.Errorf("give up becomes available only after hint 3")
+		return nil, ErrGiveUpTooEarly
 	}
 	ex, err := exercise.Load(filepath.Join(e.exDir, sess.ExerciseID))
 	if err != nil {
@@ -394,7 +404,7 @@ func (e *Engine) Shell(ctx context.Context, sessionID string) error {
 		return err
 	}
 	if e.sheller == nil {
-		return fmt.Errorf("this runtime does not support an interactive shell")
+		return ErrNoShell
 	}
 	return e.sheller.Shell(ctx, sess.SandboxID, []string{"/bin/bash"})
 }

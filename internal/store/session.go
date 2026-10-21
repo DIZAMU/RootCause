@@ -8,7 +8,12 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
+
+// ErrActiveSession means the learner already has an active session, so a new
+// one cannot start (migration 0002).
+var ErrActiveSession = errors.New("learner already has an active session")
 
 // Session is one attempt at one variant (spec section 3).
 type Session struct {
@@ -34,12 +39,14 @@ type NewSession struct {
 	LearnerID       int
 	ExerciseID      string
 	ExerciseVersion int
+	Difficulty      int // the exercise's difficulty now; kept for the level rule
 	Seed            int64
 	VariantValues   map[string]string
 	TTL             time.Duration
 }
 
-// CreateSession inserts a new active session.
+// CreateSession inserts a new active session. It returns ErrActiveSession if
+// the learner already has one.
 func (s *Store) CreateSession(ctx context.Context, n NewSession) (Session, error) {
 	variantJSON, err := json.Marshal(n.VariantValues)
 	if err != nil {
@@ -48,9 +55,15 @@ func (s *Store) CreateSession(ctx context.Context, n NewSession) (Session, error
 	expires := time.Now().Add(n.TTL)
 	_, err = s.pool.Exec(ctx, `
 		INSERT INTO session
-		    (id, learner_id, exercise_id, exercise_version, seed, variant_values, status, expires_at)
-		VALUES ($1, $2, $3, $4, $5, $6, 'active', $7)`,
-		n.ID, n.LearnerID, n.ExerciseID, n.ExerciseVersion, n.Seed, variantJSON, expires)
+		    (id, learner_id, exercise_id, exercise_version, exercise_difficulty,
+		     seed, variant_values, status, expires_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', $8)`,
+		n.ID, n.LearnerID, n.ExerciseID, n.ExerciseVersion, n.Difficulty,
+		n.Seed, variantJSON, expires)
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "one_active_session_per_learner" {
+		return Session{}, ErrActiveSession
+	}
 	if err != nil {
 		return Session{}, fmt.Errorf("insert session: %w", err)
 	}
@@ -151,12 +164,13 @@ type Outcome struct {
 
 // TopicOutcomes returns the learner's finished sessions in a topic, oldest
 // first, with whether each ran at least one check (needed to score expiries)
-// and the exercise's difficulty (needed for the level rule).
+// and the difficulty the exercise had when the session started (needed for
+// the level rule; a later recalibration does not change it).
 func (s *Store) TopicOutcomes(ctx context.Context, learnerID int, topic string) ([]Outcome, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT s.status, s.stars,
 		       EXISTS (SELECT 1 FROM event e WHERE e.session_id = s.id AND e.type = 'check_run'),
-		       x.difficulty
+		       s.exercise_difficulty
 		FROM session s
 		JOIN exercise x ON x.id = s.exercise_id
 		WHERE s.learner_id = $1 AND x.topic = $2

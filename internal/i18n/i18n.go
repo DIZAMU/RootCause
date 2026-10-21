@@ -6,8 +6,7 @@ package i18n
 import (
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
+	"io/fs"
 	"regexp"
 	"strings"
 )
@@ -37,18 +36,18 @@ type Bundle struct {
 	msgs map[string]map[string]string // lang -> key -> template
 }
 
-// Load reads locales/en.json and locales/no.json from dir.
-func Load(dir string) (*Bundle, error) {
+// Load reads en.json and no.json from fsys, normally locales.FS.
+func Load(fsys fs.FS) (*Bundle, error) {
 	b := &Bundle{msgs: make(map[string]map[string]string)}
 	for _, lang := range Languages {
-		path := filepath.Join(dir, lang+".json")
-		raw, err := os.ReadFile(path)
+		name := lang + ".json"
+		raw, err := fs.ReadFile(fsys, name)
 		if err != nil {
-			return nil, fmt.Errorf("read %s: %w", path, err)
+			return nil, fmt.Errorf("read %s: %w", name, err)
 		}
 		var m map[string]string
 		if err := json.Unmarshal(raw, &m); err != nil {
-			return nil, fmt.Errorf("parse %s: %w", path, err)
+			return nil, fmt.Errorf("parse %s: %w", name, err)
 		}
 		b.msgs[lang] = m
 	}

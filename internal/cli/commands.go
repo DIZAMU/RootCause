@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"path/filepath"
@@ -28,8 +29,19 @@ func (a *App) Start(ctx context.Context, args []string) error {
 		a.say("start.active_exists", map[string]string{"exercise": cur.ExerciseID})
 		return nil
 	}
+	if !fileExists(filepath.Join(a.root, "exercises", args[0], "exercise.yaml")) {
+		return failWith("start.unknown_exercise", map[string]string{"id": args[0]}, nil)
+	}
 	seed := rand.Int63()
 	sess, err := a.eng.Start(ctx, a.learner.ID, args[0], seed)
+	if errors.Is(err, store.ErrActiveSession) {
+		// Another start won the race (migration 0002 enforces one active
+		// session); report it the same way as the check above.
+		if cur, ok, aerr := a.active(ctx); aerr == nil && ok {
+			a.say("start.active_exists", map[string]string{"exercise": cur.ExerciseID})
+			return nil
+		}
+	}
 	if err != nil {
 		return err
 	}
@@ -283,7 +295,7 @@ func (a *App) exerciseTexts(sess store.Session) (*exercise.I18n, error) {
 func (a *App) printTicket(sess store.Session) {
 	texts, err := a.exerciseTexts(sess)
 	if err != nil {
-		fmt.Fprintln(a.out, err)
+		fmt.Fprintln(a.out, a.Describe(err))
 		return
 	}
 	vars := textVars(sess)
