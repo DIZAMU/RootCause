@@ -5,7 +5,11 @@
 # The image holds no site config and no RootCause scripts. setup.sh renders the
 # healthy site at session start and is deleted afterwards, so the correct
 # config can never be read or restored from inside the sandbox.
-FROM nginx:1.27
+#
+# Pinned to nginx's stable line (1.30.x, Debian 13) by digest, so a rebuild
+# always gets the same base. To update: docker pull nginx:<tag>, then
+# docker inspect --format '{{index .RepoDigests 0}}' nginx:<tag>.
+FROM nginx:1.30.4@sha256:d5792f71a9496b833bc08ea834a758c46e2b6a6306c10f4be926f38a656cdc1c
 
 # curl: the check fetches the site. procps: break and solution use pkill.
 # nano, vim-tiny: the learner needs an editor to fix a config file.
