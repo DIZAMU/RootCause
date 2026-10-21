@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -43,3 +44,22 @@ func (s *Store) Pool() *pgxpool.Pool { return s.pool }
 
 // DSNFromEnv returns the database DSN from RC_DATABASE_URL, or "" if unset.
 func DSNFromEnv() string { return os.Getenv("RC_DATABASE_URL") }
+
+// TestDSN returns the DSN integration tests may use: RC_TEST_DATABASE_URL, and
+// only if its database name ends in "_test". Tests create sessions, change the
+// language and re-sync exercises, so they must never touch the learner's real
+// database. It returns "" when no safe test database is configured.
+func TestDSN() string {
+	dsn := os.Getenv("RC_TEST_DATABASE_URL")
+	if dsn == "" {
+		return ""
+	}
+	path := dsn
+	if i := strings.IndexAny(path, "?"); i >= 0 {
+		path = path[:i]
+	}
+	if !strings.HasSuffix(path, "_test") {
+		return ""
+	}
+	return dsn
+}

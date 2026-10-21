@@ -14,9 +14,9 @@ import (
 // TestReaperExpiresDueSession starts a real session, backdates its TTL, and
 // checks the reaper expires it: status expired, sandbox gone, expired event.
 func TestReaperExpiresDueSession(t *testing.T) {
-	dsn := store.DSNFromEnv()
+	dsn := store.TestDSN()
 	if dsn == "" {
-		t.Skip("RC_DATABASE_URL not set")
+		t.Skip("RC_TEST_DATABASE_URL not set to a database ending in _test")
 	}
 	if err := exec.Command("docker", "info").Run(); err != nil {
 		t.Skip("docker not reachable:", err)

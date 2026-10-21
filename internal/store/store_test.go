@@ -6,12 +6,12 @@ import (
 	"time"
 )
 
-// openOrSkip connects using RC_DATABASE_URL, or skips if no DB is reachable.
+// openOrSkip connects to the test database, or skips if none is configured.
 func openOrSkip(t *testing.T) *Store {
 	t.Helper()
-	dsn := DSNFromEnv()
+	dsn := TestDSN()
 	if dsn == "" {
-		t.Skip("RC_DATABASE_URL not set; skipping store integration test")
+		t.Skip("RC_TEST_DATABASE_URL not set to a database ending in _test; skipping")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -94,5 +94,19 @@ func TestMigrateAndSync(t *testing.T) {
 	}
 	if !found {
 		t.Error("synced exercise not found")
+	}
+}
+
+func TestTestDSNRefusesRealDatabase(t *testing.T) {
+	cases := map[string]string{
+		"postgres://u:p@127.0.0.1:5432/rootcause?sslmode=disable":      "",
+		"postgres://u:p@127.0.0.1:5432/rootcause_test?sslmode=disable": "postgres://u:p@127.0.0.1:5432/rootcause_test?sslmode=disable",
+		"postgres://u:p@127.0.0.1:5432/rootcause_test":                 "postgres://u:p@127.0.0.1:5432/rootcause_test",
+	}
+	for dsn, want := range cases {
+		t.Setenv("RC_TEST_DATABASE_URL", dsn)
+		if got := TestDSN(); got != want {
+			t.Errorf("TestDSN(%q) = %q, want %q", dsn, got, want)
+		}
 	}
 }
