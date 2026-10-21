@@ -355,6 +355,11 @@ Tests: unique and not-null keys, accepted values for event types and outcomes, r
 - Session pods: no service account token mounted, seccomp `RuntimeDefault`, no hostPath volumes.
 - Secrets never enter the repo. Local secrets live in git-ignored `.env` files. Cluster secrets are created outside git or sealed (decided in Phase 7).
 
+### 13.3 Known limits (v1)
+
+- Checks run inside the sandbox, where the learner is root. A determined learner could replace a tool the check uses, such as `curl` or `nginx`, and fake a pass. This is acceptable for a single-user practice tool. Exercises where it matters use `runs_from: runner`.
+- `check.before: restart` restarts the container. Files stay, but only PID 1 starts again: processes that setup.sh started are gone, and setup.sh does not run again. An exercise that needs a service running after a reboot must arrange that itself (see OQ-1).
+
 ## 14. CI/CD
 
 | Workflow | Runs on | Does |
@@ -486,7 +491,7 @@ The owner decides when the repo goes public. Ready means:
 |---|---|---|---|
 | OQ-1 | Service exercises usually rely on systemd, which often needs extra container privileges | a) systemd in the container, if it runs unprivileged on this setup; b) a lighter service manager in the image; c) replace svc-02 with a cron exercise | Phase 3 |
 | OQ-2 | Docker manages resolv.conf inside containers | Verify edits persist through a session. Otherwise the fault lives in lookup order or the local DNS server config | Phase 3 |
-| OQ-3 | The learner is root inside the sandbox | userns-remap or rootless Docker in v1; gVisor or user namespaces in v2 | Phase 2 (v1), Phase 9 (v2) |
+| OQ-3 | The learner is root inside the sandbox | v1 resolved: userns-remap (`/etc/docker/daemon.json` with `{"userns-remap": "default"}`). Chosen over rootless Docker because it keeps the existing daemon and needs one config change. Verified with `docker info` showing `name=userns`; container root maps to host UID 100000. The CLI refuses to run sessions without userns or rootless mode. v2: gVisor or user namespaces | Phase 9 (v2) |
 | OQ-4 | Argo CD memory use on a 16 GB laptop next to the cluster | Argo CD, or Flux if too heavy | Phase 8 |
 | OQ-5 | Public live demo | Recording only, or Oracle Cloud free tier (ARM, idle reclaim risk) | After v1 |
 | OQ-6 | Elo ratings | Keep 2 up / 2 down, or switch | When the catalog passes about 30 exercises |

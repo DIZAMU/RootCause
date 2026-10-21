@@ -192,12 +192,12 @@ func (r *Runtime) Destroy(ctx context.Context, id string) error {
 	return nil
 }
 
-// List returns the running RootCause sandboxes.
+// List returns the running RootCause sandboxes, with their labels.
 func (r *Runtime) List(ctx context.Context) ([]runtime.Sandbox, error) {
 	const sep = "\x1f" // unit separator, safe against names/images
-	format := strings.Join([]string{"{{.ID}}", "{{.Names}}", "{{.Image}}"}, sep)
+	format := strings.Join([]string{"{{.ID}}", "{{.Names}}", "{{.Image}}", "{{.Labels}}"}, sep)
 	out, errOut, err := r.run(ctx, nil,
-		"ps", "--filter", "label="+labelSandbox+"=true", "--format", format)
+		"ps", "--no-trunc", "--filter", "label="+labelSandbox+"=true", "--format", format)
 	if err != nil {
 		return nil, fmt.Errorf("docker ps: %w: %s", err, strings.TrimSpace(errOut))
 	}
@@ -207,12 +207,24 @@ func (r *Runtime) List(ctx context.Context) ([]runtime.Sandbox, error) {
 			continue
 		}
 		f := strings.Split(line, sep)
-		if len(f) != 3 {
+		if len(f) != 4 {
 			continue
 		}
-		boxes = append(boxes, runtime.Sandbox{ID: f[0], Name: f[1], Image: f[2]})
+		boxes = append(boxes, runtime.Sandbox{ID: f[0], Name: f[1], Image: f[2], Labels: parseLabels(f[3])})
 	}
 	return boxes, nil
+}
+
+// parseLabels reads docker ps's "key=value,key=value" label list. RootCause
+// label values never contain a comma.
+func parseLabels(s string) map[string]string {
+	labels := make(map[string]string)
+	for _, kv := range strings.Split(s, ",") {
+		if k, v, ok := strings.Cut(kv, "="); ok {
+			labels[k] = v
+		}
+	}
+	return labels
 }
 
 // Shell opens an interactive shell wired to the caller's terminal (v1 only).

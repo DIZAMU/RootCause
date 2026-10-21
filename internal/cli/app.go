@@ -19,6 +19,7 @@ import (
 	"github.com/DIZAMU/RootCause/internal/runtime/docker"
 	"github.com/DIZAMU/RootCause/internal/session"
 	"github.com/DIZAMU/RootCause/internal/store"
+	"github.com/DIZAMU/RootCause/locales"
 )
 
 // App holds everything a command needs.
@@ -34,45 +35,58 @@ type App struct {
 
 // NewApp builds the app for commands that need the database. It assumes
 // `rootcause init` has already brought Postgres up; if the database is
-// unreachable it returns a clear "run init" error.
+// unreachable it returns a clear "run init" error. Every error it returns is
+// already translated: into English until the profile is loaded, then into the
+// learner's language.
 func NewApp(ctx context.Context) (*App, error) {
-	root, err := findRoot()
+	bundle, err := i18n.Load(locales.FS)
 	if err != nil {
 		return nil, err
 	}
-	bundle, err := i18n.Load(filepath.Join(root, "locales"))
+	lang := defaultLang()
+	failed := func(err error) (*App, error) {
+		return nil, errors.New(Message(bundle, lang, err))
+	}
+
+	root, err := findRoot()
 	if err != nil {
-		return nil, err
+		return failed(err)
 	}
 	dsn, err := resolveDSN(root)
 	if err != nil {
-		return nil, err
+		return failed(err)
 	}
 	st, err := store.Open(ctx, dsn)
 	if err != nil {
-		return nil, fmt.Errorf("%s", bundle.T(defaultLang(), "error.needs_init", nil))
+		return failed(fail("error.needs_init", nil))
 	}
 	if err := st.Migrate(ctx); err != nil {
-		return nil, err
+		st.Close()
+		return failed(err)
 	}
 	if err := syncExercises(ctx, st, root); err != nil {
-		return nil, err
+		st.Close()
+		return failed(err)
 	}
 	learner, err := st.EnsureLearner(ctx, defaultName())
 	if err != nil {
-		return nil, err
+		st.Close()
+		return failed(err)
 	}
+	lang = learner.Lang
 	rt, err := docker.New()
 	if err != nil {
-		return nil, err
+		st.Close()
+		return failed(fail("error.no_docker", err))
 	}
 	// Refuse to run sessions when root in a sandbox would be root on the host
 	// (spec section 13.1, OQ-3).
 	if err := rt.CheckIsolation(ctx); err != nil {
+		st.Close()
 		if errors.Is(err, docker.ErrNotIsolated) {
-			return nil, fmt.Errorf("%s", bundle.T(learner.Lang, "error.not_isolated", nil))
+			return failed(fail("error.not_isolated", nil))
 		}
-		return nil, err
+		return failed(err)
 	}
 	eng := session.New(rt, rt, rt, st, filepath.Join(root, "exercises"))
 
@@ -104,40 +118,67 @@ func (a *App) say(key string, vars map[string]string) {
 	fmt.Fprintln(a.out, a.t(key, vars))
 }
 
+// Usage returns the help text in lang. With no profile loaded yet, the CLI
+// passes English.
+func Usage(lang string) string {
+	b, err := i18n.Load(locales.FS)
+	if err != nil {
+		return err.Error()
+	}
+	return b.T(lang, "help.usage", nil)
+}
+
+// UnknownCommand returns the help text for an unknown command, in the
+// learner's language.
+func (a *App) UnknownCommand(cmd string) string {
+	return a.t("help.unknown_command", map[string]string{"command": cmd}) + "\n\n" + a.t("help.usage", nil)
+}
+
+// Describe renders a command's error for the learner, in their language.
+func (a *App) Describe(err error) string { return Message(a.bundle, a.lang(), err) }
+
 // Init brings Postgres up, migrates, syncs exercises and ensures the profile.
-// It returns the number of exercises synced.
+// It returns the number of exercises synced. Errors are already translated
+// (into English: there may be no profile yet).
 func Init(ctx context.Context) (string, int, error) {
+	bundle, err := i18n.Load(locales.FS)
+	if err != nil {
+		return "", 0, err
+	}
+	failed := func(err error) (string, int, error) {
+		return "", 0, errors.New(Message(bundle, defaultLang(), err))
+	}
+
 	root, err := findRoot()
 	if err != nil {
-		return "", 0, err
-	}
-	bundle, err := i18n.Load(filepath.Join(root, "locales"))
-	if err != nil {
-		return "", 0, err
-	}
-	if err := composeUp(ctx, root); err != nil {
-		return "", 0, err
+		return failed(err)
 	}
 	dsn, err := resolveDSN(root)
 	if err != nil {
-		return "", 0, err
+		return failed(err)
+	}
+	if err := composeUp(ctx, root); err != nil {
+		return failed(err)
 	}
 	st, err := store.Open(ctx, dsn)
 	if err != nil {
-		return "", 0, err
+		return failed(fail("error.db_unreachable", err))
 	}
 	defer st.Close()
 	if err := st.Migrate(ctx); err != nil {
-		return "", 0, err
+		return failed(err)
 	}
 	if err := syncExercises(ctx, st, root); err != nil {
-		return "", 0, err
+		return failed(err)
 	}
-	if _, err := st.EnsureLearner(ctx, defaultName()); err != nil {
-		return "", 0, err
+	learner, err := st.EnsureLearner(ctx, defaultName())
+	if err != nil {
+		return failed(err)
 	}
-	rows, _ := st.Exercises(ctx)
-	learner, _ := st.EnsureLearner(ctx, defaultName())
+	rows, err := st.Exercises(ctx)
+	if err != nil {
+		return failed(err)
+	}
 	return bundle.T(learner.Lang, "init.done", map[string]string{"count": fmt.Sprint(len(rows))}), len(rows), nil
 }
 
@@ -159,7 +200,7 @@ func findRoot() (string, error) {
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return "", fmt.Errorf("project root not found: run from inside the repo, or set RC_ROOT")
+			return "", fail("error.no_root", nil)
 		}
 		dir = parent
 	}
@@ -173,11 +214,11 @@ func resolveDSN(root string) (string, error) {
 	}
 	env, err := readEnvFile(filepath.Join(root, "deploy", "compose", ".env"))
 	if err != nil {
-		return "", fmt.Errorf("no RC_DATABASE_URL and cannot read deploy/compose/.env: %w", err)
+		return "", fail("error.no_env", err)
 	}
 	user, db, pw := env["POSTGRES_USER"], env["POSTGRES_DB"], env["POSTGRES_PASSWORD"]
 	if user == "" || db == "" || pw == "" {
-		return "", fmt.Errorf("deploy/compose/.env is missing POSTGRES_USER/DB/PASSWORD")
+		return "", fail("error.env_incomplete", nil)
 	}
 	return fmt.Sprintf("postgres://%s:%s@127.0.0.1:5432/%s?sslmode=disable", user, pw, db), nil
 }
@@ -209,7 +250,7 @@ func composeUp(ctx context.Context, root string) error {
 	envFile := filepath.Join(root, "deploy", "compose", ".env")
 	cmd := exec.CommandContext(ctx, "docker", "compose", "-f", file, "--env-file", envFile, "up", "-d")
 	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("docker compose up: %w: %s", err, strings.TrimSpace(string(out)))
+		return fail("error.compose_failed", fmt.Errorf("docker compose up: %w: %s", err, strings.TrimSpace(string(out))))
 	}
 	// Wait for the health check to pass.
 	deadline := time.Now().Add(60 * time.Second)
@@ -221,7 +262,7 @@ func composeUp(ctx context.Context, root string) error {
 		}
 		time.Sleep(time.Second)
 	}
-	return fmt.Errorf("postgres did not become healthy in time")
+	return fail("error.postgres_unhealthy", nil)
 }
 
 // syncExercises loads every exercise and upserts the catalog.
@@ -237,7 +278,7 @@ func loadAllExercises(root string) ([]store.ExerciseRow, error) {
 	exRoot := filepath.Join(root, "exercises")
 	entries, err := os.ReadDir(exRoot)
 	if err != nil {
-		return nil, fmt.Errorf("read exercises dir: %w", err)
+		return nil, fail("error.no_exercises", err)
 	}
 	var rows []store.ExerciseRow
 	for _, e := range entries {

@@ -31,24 +31,21 @@ func TestPlaySvc01(t *testing.T) {
 	if err != nil {
 		t.Skip("db not reachable:", err)
 	}
-	defer st.Close()
+	t.Cleanup(st.Close)
 	if err := st.Migrate(ctx); err != nil {
 		t.Fatalf("migrate: %v", err)
-	}
-	learner, err := st.EnsureLearner(ctx, "DIZAMU")
-	if err != nil {
-		t.Fatalf("learner: %v", err)
 	}
 
 	rt, err := docker.New()
 	if err != nil {
 		t.Skip("docker runtime:", err)
 	}
+	learnerID := testLearner(t, st, rt)
 	exDir, _ := filepath.Abs("../../exercises")
 	eng := New(rt, rt, rt, st, exDir)
 
 	// Start: fault planted, sandbox running.
-	sess, err := eng.Start(ctx, learner.ID, "svc-01-intranet-config", 1)
+	sess, err := eng.Start(ctx, learnerID, "svc-01-intranet-config", 1)
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -107,11 +104,7 @@ func TestPlaySvc01(t *testing.T) {
 	for _, e := range events {
 		types = append(types, e.Type)
 	}
-	// A level_changed event may follow, depending on earlier sessions in the
-	// test database; it is not part of this assertion.
-	if n := len(types); n > 0 && types[n-1] == "level_changed" {
-		types = types[:n-1]
-	}
+	// The learner is new, so one solve cannot change a level: no level_changed.
 	want := []string{"session_started", "check_run", "check_run", "solved"}
 	if len(types) != len(want) {
 		t.Fatalf("event types = %v, want %v", types, want)

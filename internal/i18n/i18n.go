@@ -6,10 +6,27 @@ package i18n
 import (
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
+	"io/fs"
+	"regexp"
 	"strings"
 )
+
+// placeholderPattern matches a {name} token. The name must follow the brace
+// directly, so text like "server {" or {"line": 5} is not a placeholder.
+var placeholderPattern = regexp.MustCompile(`\{([A-Za-z0-9_]+)\}`)
+
+// Placeholders returns the distinct {name} tokens in s, in order of first use.
+func Placeholders(s string) []string {
+	var names []string
+	seen := make(map[string]bool)
+	for _, m := range placeholderPattern.FindAllStringSubmatch(s, -1) {
+		if !seen[m[1]] {
+			seen[m[1]] = true
+			names = append(names, m[1])
+		}
+	}
+	return names
+}
 
 // Languages supported in v1.
 var Languages = []string{"en", "no"}
@@ -19,18 +36,18 @@ type Bundle struct {
 	msgs map[string]map[string]string // lang -> key -> template
 }
 
-// Load reads locales/en.json and locales/no.json from dir.
-func Load(dir string) (*Bundle, error) {
+// Load reads en.json and no.json from fsys, normally locales.FS.
+func Load(fsys fs.FS) (*Bundle, error) {
 	b := &Bundle{msgs: make(map[string]map[string]string)}
 	for _, lang := range Languages {
-		path := filepath.Join(dir, lang+".json")
-		raw, err := os.ReadFile(path)
+		name := lang + ".json"
+		raw, err := fs.ReadFile(fsys, name)
 		if err != nil {
-			return nil, fmt.Errorf("read %s: %w", path, err)
+			return nil, fmt.Errorf("read %s: %w", name, err)
 		}
 		var m map[string]string
 		if err := json.Unmarshal(raw, &m); err != nil {
-			return nil, fmt.Errorf("parse %s: %w", path, err)
+			return nil, fmt.Errorf("parse %s: %w", name, err)
 		}
 		b.msgs[lang] = m
 	}

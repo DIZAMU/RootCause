@@ -2,13 +2,13 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"path/filepath"
 	"strings"
 
 	"github.com/DIZAMU/RootCause/internal/exercise"
-	"github.com/DIZAMU/RootCause/internal/grading"
 	"github.com/DIZAMU/RootCause/internal/i18n"
 	"github.com/DIZAMU/RootCause/internal/session"
 	"github.com/DIZAMU/RootCause/internal/store"
@@ -29,8 +29,19 @@ func (a *App) Start(ctx context.Context, args []string) error {
 		a.say("start.active_exists", map[string]string{"exercise": cur.ExerciseID})
 		return nil
 	}
+	if !fileExists(filepath.Join(a.root, "exercises", args[0], "exercise.yaml")) {
+		return failWith("start.unknown_exercise", map[string]string{"id": args[0]}, nil)
+	}
 	seed := rand.Int63()
 	sess, err := a.eng.Start(ctx, a.learner.ID, args[0], seed)
+	if errors.Is(err, store.ErrActiveSession) {
+		// Another start won the race (migration 0002 enforces one active
+		// session); report it the same way as the check above.
+		if cur, ok, aerr := a.active(ctx); aerr == nil && ok {
+			a.say("start.active_exists", map[string]string{"exercise": cur.ExerciseID})
+			return nil
+		}
+	}
 	if err != nil {
 		return err
 	}
@@ -123,9 +134,19 @@ func (a *App) Check(ctx context.Context) error {
 			a.announceLevel(res.Level)
 		}
 	default:
-		a.say("check.fail", map[string]string{"feedback": i18n.Fill(texts.Feedback[res.Feedback], vars)})
+		if fb := feedbackText(texts, res.Feedback, vars); fb != "" {
+			a.say("check.fail", map[string]string{"feedback": fb})
+		} else {
+			a.say("check.fail_generic", nil)
+		}
 	}
 	return nil
+}
+
+// feedbackText returns the exercise's symptom text for a check's feedback key,
+// with placeholders filled, or "" if the exercise has no text for that key.
+func feedbackText(texts *exercise.I18n, key string, vars map[string]string) string {
+	return strings.TrimSpace(i18n.Fill(texts.Feedback[key], vars))
 }
 
 // Reset gives a fresh copy of the same variant.
@@ -175,8 +196,8 @@ func (a *App) GiveUp(ctx context.Context) error {
 	return nil
 }
 
-// Status shows the active session and best stars per exercise. (Topic levels
-// and the review queue arrive with grading and dbt in later phases.)
+// Status shows the active session, the level per topic and the best stars per
+// exercise. (The review queue arrives with dbt in Phase 4.)
 func (a *App) Status(ctx context.Context) error {
 	if sess, ok, err := a.active(ctx); err != nil {
 		return err
@@ -196,15 +217,11 @@ func (a *App) Status(ctx context.Context) error {
 func (a *App) printLevels(ctx context.Context) error {
 	a.say("status.levels_header", nil)
 	for _, topic := range topics {
-		outs, err := a.st.TopicOutcomes(ctx, a.learner.ID, topic)
+		level, err := a.eng.TopicLevel(ctx, a.learner.ID, topic)
 		if err != nil {
 			return err
 		}
-		kinds := make([]grading.Kind, len(outs))
-		for i, o := range outs {
-			kinds[i] = grading.Classify(o.Status, o.Stars, o.HadCheck)
-		}
-		a.say("status.level_row", map[string]string{"topic": topic, "level": fmt.Sprint(grading.Level(kinds))})
+		a.say("status.level_row", map[string]string{"topic": topic, "level": fmt.Sprint(level)})
 	}
 	return nil
 }
@@ -278,7 +295,7 @@ func (a *App) exerciseTexts(sess store.Session) (*exercise.I18n, error) {
 func (a *App) printTicket(sess store.Session) {
 	texts, err := a.exerciseTexts(sess)
 	if err != nil {
-		fmt.Fprintln(a.out, err)
+		fmt.Fprintln(a.out, a.Describe(err))
 		return
 	}
 	vars := textVars(sess)

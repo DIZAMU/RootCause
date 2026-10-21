@@ -8,7 +8,12 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
+
+// ErrActiveSession means the learner already has an active session, so a new
+// one cannot start (migration 0002).
+var ErrActiveSession = errors.New("learner already has an active session")
 
 // Session is one attempt at one variant (spec section 3).
 type Session struct {
@@ -34,12 +39,14 @@ type NewSession struct {
 	LearnerID       int
 	ExerciseID      string
 	ExerciseVersion int
+	Difficulty      int // the exercise's difficulty now; kept for the level rule
 	Seed            int64
 	VariantValues   map[string]string
 	TTL             time.Duration
 }
 
-// CreateSession inserts a new active session.
+// CreateSession inserts a new active session. It returns ErrActiveSession if
+// the learner already has one.
 func (s *Store) CreateSession(ctx context.Context, n NewSession) (Session, error) {
 	variantJSON, err := json.Marshal(n.VariantValues)
 	if err != nil {
@@ -48,9 +55,15 @@ func (s *Store) CreateSession(ctx context.Context, n NewSession) (Session, error
 	expires := time.Now().Add(n.TTL)
 	_, err = s.pool.Exec(ctx, `
 		INSERT INTO session
-		    (id, learner_id, exercise_id, exercise_version, seed, variant_values, status, expires_at)
-		VALUES ($1, $2, $3, $4, $5, $6, 'active', $7)`,
-		n.ID, n.LearnerID, n.ExerciseID, n.ExerciseVersion, n.Seed, variantJSON, expires)
+		    (id, learner_id, exercise_id, exercise_version, exercise_difficulty,
+		     seed, variant_values, status, expires_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', $8)`,
+		n.ID, n.LearnerID, n.ExerciseID, n.ExerciseVersion, n.Difficulty,
+		n.Seed, variantJSON, expires)
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "one_active_session_per_learner" {
+		return Session{}, ErrActiveSession
+	}
 	if err != nil {
 		return Session{}, fmt.Errorf("insert session: %w", err)
 	}
@@ -105,6 +118,24 @@ func (s *Store) DueSessions(ctx context.Context) ([]Session, error) {
 	return out, rows.Err()
 }
 
+// ActiveSessionIDs returns the ids of every active session, for any learner.
+func (s *Store) ActiveSessionIDs(ctx context.Context) (map[string]bool, error) {
+	rows, err := s.pool.Query(ctx, `SELECT id FROM session WHERE status = 'active'`)
+	if err != nil {
+		return nil, fmt.Errorf("active session ids: %w", err)
+	}
+	defer rows.Close()
+	ids := make(map[string]bool)
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids[id] = true
+	}
+	return ids, rows.Err()
+}
+
 // ActiveSession returns the learner's single active session, or ErrNoRows.
 func (s *Store) ActiveSession(ctx context.Context, learnerID int) (Session, error) {
 	row := s.pool.QueryRow(ctx, `SELECT `+sessionColumns+`
@@ -143,17 +174,21 @@ func (s *Store) IncHints(ctx context.Context, id string) (int, error) {
 
 // Outcome is one finished session's contribution to a topic level.
 type Outcome struct {
-	Status   string
-	Stars    *int
-	HadCheck bool
+	Status     string
+	Stars      *int
+	HadCheck   bool
+	Difficulty int // the exercise's difficulty, 1 to 3
 }
 
 // TopicOutcomes returns the learner's finished sessions in a topic, oldest
-// first, with whether each ran at least one check (needed to score expiries).
+// first, with whether each ran at least one check (needed to score expiries)
+// and the difficulty the exercise had when the session started (needed for
+// the level rule; a later recalibration does not change it).
 func (s *Store) TopicOutcomes(ctx context.Context, learnerID int, topic string) ([]Outcome, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT s.status, s.stars,
-		       EXISTS (SELECT 1 FROM event e WHERE e.session_id = s.id AND e.type = 'check_run')
+		       EXISTS (SELECT 1 FROM event e WHERE e.session_id = s.id AND e.type = 'check_run'),
+		       s.exercise_difficulty
 		FROM session s
 		JOIN exercise x ON x.id = s.exercise_id
 		WHERE s.learner_id = $1 AND x.topic = $2
@@ -166,7 +201,7 @@ func (s *Store) TopicOutcomes(ctx context.Context, learnerID int, topic string) 
 	var out []Outcome
 	for rows.Next() {
 		var o Outcome
-		if err := rows.Scan(&o.Status, &o.Stars, &o.HadCheck); err != nil {
+		if err := rows.Scan(&o.Status, &o.Stars, &o.HadCheck, &o.Difficulty); err != nil {
 			return nil, err
 		}
 		out = append(out, o)

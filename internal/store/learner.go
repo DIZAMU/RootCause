@@ -15,24 +15,39 @@ type Learner struct {
 	Lang string
 }
 
+// learnerLockKey names the Postgres advisory lock that serializes creating the
+// profile, so two first-time commands cannot each create a learner.
+const learnerLockKey int64 = 7300_0002
+
 // EnsureLearner returns the single learner, creating it with the given name and
-// default language if none exists yet.
+// default language if none exists yet. The check and the create run in one
+// transaction under an advisory lock, which Postgres releases at commit.
 func (s *Store) EnsureLearner(ctx context.Context, name string) (Learner, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return Learner{}, fmt.Errorf("begin: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, learnerLockKey); err != nil {
+		return Learner{}, fmt.Errorf("lock learner: %w", err)
+	}
+
 	var l Learner
-	err := s.pool.QueryRow(ctx,
+	err = tx.QueryRow(ctx,
 		`SELECT id, name, lang FROM learner ORDER BY id LIMIT 1`).
 		Scan(&l.ID, &l.Name, &l.Lang)
-	if err == nil {
-		return l, nil
-	}
-	if !errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, pgx.ErrNoRows) {
+		err = tx.QueryRow(ctx,
+			`INSERT INTO learner (name) VALUES ($1) RETURNING id, name, lang`, name).
+			Scan(&l.ID, &l.Name, &l.Lang)
+		if err != nil {
+			return Learner{}, fmt.Errorf("create learner: %w", err)
+		}
+	} else if err != nil {
 		return Learner{}, fmt.Errorf("read learner: %w", err)
 	}
-	err = s.pool.QueryRow(ctx,
-		`INSERT INTO learner (name) VALUES ($1) RETURNING id, name, lang`, name).
-		Scan(&l.ID, &l.Name, &l.Lang)
-	if err != nil {
-		return Learner{}, fmt.Errorf("create learner: %w", err)
+	if err := tx.Commit(ctx); err != nil {
+		return Learner{}, fmt.Errorf("commit: %w", err)
 	}
 	return l, nil
 }

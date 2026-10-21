@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/DIZAMU/RootCause/internal/exercise"
+	"github.com/DIZAMU/RootCause/internal/i18n"
 	"github.com/DIZAMU/RootCause/internal/runtime"
 )
 
@@ -52,7 +53,9 @@ func SelfTest(ctx context.Context, rt runtime.Runtime, builder Builder, exDir st
 func (e *Engine) selfTestScenario(ctx context.Context, ex *exercise.Exercise, seed int64, tag string, env map[string]string, solve bool, log io.Writer) error {
 	name := fmt.Sprintf("selftest-%s-%d-%s", ex.ID, seed, tag)
 	_ = e.rt.Destroy(ctx, "rootcause-"+name)
-	sb, err := e.rt.Create(ctx, e.specFor(ex, name))
+	spec := e.specFor(ex, name)
+	spec.Labels[labelSelftest] = "true" // the reaper never touches these
+	sb, err := e.rt.Create(ctx, spec)
 	if err != nil {
 		return err
 	}
@@ -68,6 +71,10 @@ func (e *Engine) selfTestScenario(ctx context.Context, ex *exercise.Exercise, se
 		if err := e.assertNoTrace(ctx, sb.ID); err != nil {
 			return err
 		}
+		if err := assertTextsFillable(ex, derived); err != nil {
+			return err
+		}
+		fmt.Fprintln(log, "texts:    every placeholder is filled in en and no")
 	} else {
 		res, err := e.execScript(ctx, sb.ID, ex.Dir(), "solution.sh", env)
 		if err != nil {
@@ -101,6 +108,49 @@ func (e *Engine) selfTestScenario(ctx context.Context, ex *exercise.Exercise, se
 	}
 	if res.ExitCode != want || parsed.Passed != solve {
 		return fmt.Errorf("check exit %d passed=%v, want exit %d passed=%v", res.ExitCode, parsed.Passed, want, solve)
+	}
+	if !solve {
+		if err := assertFeedbackKnown(ex, parsed.Feedback); err != nil {
+			return err
+		}
+		fmt.Fprintf(log, "feedback: %q has text in en and no\n", parsed.Feedback)
+	}
+	return nil
+}
+
+// assertTextsFillable fails if a {placeholder} in either language file is not
+// filled by a variant value or by a value break.sh derived.
+func assertTextsFillable(ex *exercise.Exercise, derived map[string]any) error {
+	available := make(map[string]bool)
+	for name := range ex.Variants {
+		available[name] = true
+	}
+	for name := range derived {
+		available[name] = true
+	}
+	for _, lang := range i18n.Languages {
+		t, err := ex.LoadI18n(lang)
+		if err != nil {
+			return err
+		}
+		if missing := exercise.UnfilledPlaceholders(t, available); len(missing) > 0 {
+			return fmt.Errorf("%s texts use placeholders that nothing fills: %v", lang, missing)
+		}
+	}
+	return nil
+}
+
+// assertFeedbackKnown fails if a failing check's feedback key has no text in
+// either language file, so the learner would see no symptom description.
+func assertFeedbackKnown(ex *exercise.Exercise, key string) error {
+	for _, lang := range i18n.Languages {
+		t, err := ex.LoadI18n(lang)
+		if err != nil {
+			return err
+		}
+		if strings.TrimSpace(t.Feedback[key]) == "" {
+			return fmt.Errorf("check feedback key %q has no text in %s", key, lang)
+		}
 	}
 	return nil
 }

@@ -9,6 +9,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,6 +22,14 @@ import (
 	"github.com/DIZAMU/RootCause/internal/grading"
 	"github.com/DIZAMU/RootCause/internal/runtime"
 	"github.com/DIZAMU/RootCause/internal/store"
+)
+
+// Errors the CLI turns into translated messages (spec section 12).
+var (
+	// ErrGiveUpTooEarly means give up was asked for before hint 3.
+	ErrGiveUpTooEarly = errors.New("give up is only available after hint 3")
+	// ErrNoShell means the runtime cannot open an interactive shell.
+	ErrNoShell = errors.New("runtime has no interactive shell")
 )
 
 // Builder builds an exercise image. The docker runtime implements it.
@@ -86,6 +95,7 @@ func (e *Engine) Start(ctx context.Context, learnerID int, exerciseID string, se
 		LearnerID:       learnerID,
 		ExerciseID:      ex.ID,
 		ExerciseVersion: ex.Version,
+		Difficulty:      ex.Difficulty,
 		Seed:            seed,
 		VariantValues:   variant,
 		TTL:             time.Duration(ex.SessionTTLMin) * time.Minute,
@@ -137,8 +147,19 @@ func (e *Engine) Start(ctx context.Context, learnerID int, exerciseID string, se
 	return started, err
 }
 
+// Labels on every sandbox, read by the reaper.
+const (
+	labelSession  = "rootcause.session"  // the session id
+	labelDatabase = "rootcause.database" // the database that owns the session
+	labelSelftest = "rootcause.selftest" // "true" on selftest sandboxes
+)
+
 // specFor builds the sandbox spec for an exercise session.
 func (e *Engine) specFor(ex *exercise.Exercise, sessionID string) runtime.SandboxSpec {
+	labels := map[string]string{labelSession: sessionID}
+	if e.st != nil {
+		labels[labelDatabase] = e.st.Database()
+	}
 	return runtime.SandboxSpec{
 		Name:    "rootcause-" + sessionID,
 		Image:   imageTag(ex),
@@ -146,7 +167,7 @@ func (e *Engine) specFor(ex *exercise.Exercise, sessionID string) runtime.Sandbo
 		CPUs:    ex.Resources.CPUs,
 		Network: ex.Network,
 		Caps:    ex.Capabilities,
-		Labels:  map[string]string{"rootcause.session": sessionID},
+		Labels:  labels,
 	}
 }
 
@@ -251,12 +272,9 @@ func (e *Engine) applyLevel(ctx context.Context, learnerID int, topic, sessionID
 	if len(outs) == 0 {
 		return nil, nil
 	}
-	kinds := make([]grading.Kind, len(outs))
-	for i, o := range outs {
-		kinds[i] = grading.Classify(o.Status, o.Stars, o.HadCheck)
-	}
-	after := grading.Level(kinds)
-	before := grading.Level(kinds[:len(kinds)-1])
+	levels := levelOutcomes(outs)
+	after := grading.Level(levels)
+	before := grading.Level(levels[:len(levels)-1])
 	if after == before {
 		return nil, nil
 	}
@@ -266,6 +284,28 @@ func (e *Engine) applyLevel(ctx context.Context, learnerID int, topic, sessionID
 		return nil, err
 	}
 	return lc, nil
+}
+
+// TopicLevel returns the learner's current level in a topic (spec section
+// 7.1), replayed from every finished session in that topic.
+func (e *Engine) TopicLevel(ctx context.Context, learnerID int, topic string) (int, error) {
+	outs, err := e.st.TopicOutcomes(ctx, learnerID, topic)
+	if err != nil {
+		return 0, err
+	}
+	return grading.Level(levelOutcomes(outs)), nil
+}
+
+// levelOutcomes turns stored sessions into the inputs the level rule needs.
+func levelOutcomes(outs []store.Outcome) []grading.Outcome {
+	levels := make([]grading.Outcome, len(outs))
+	for i, o := range outs {
+		levels[i] = grading.Outcome{
+			Kind:       grading.Classify(o.Status, o.Stars, o.HadCheck),
+			Difficulty: o.Difficulty,
+		}
+	}
+	return levels
 }
 
 // Hint reveals the next hint tier and logs hint_revealed. It returns the tier
@@ -297,7 +337,9 @@ func (e *Engine) Hint(ctx context.Context, sessionID string) (int, error) {
 }
 
 // Reset rebuilds the sandbox for the same variant and re-plants the fault,
-// keeping revealed hints. It logs reset (spec section 6).
+// keeping revealed hints. It logs reset (spec section 6). If the rebuild
+// fails, the session has no working sandbox, so it is voided with a voided
+// event, the same way as a failed Start.
 func (e *Engine) Reset(ctx context.Context, sessionID string) error {
 	sess, err := e.st.SessionByID(ctx, sessionID)
 	if err != nil {
@@ -309,15 +351,25 @@ func (e *Engine) Reset(ctx context.Context, sessionID string) error {
 	}
 	_ = e.rt.Destroy(ctx, sess.SandboxID)
 
+	void := func(sandboxID string, err error) error {
+		bg := context.Background()
+		if sandboxID != "" {
+			_ = e.rt.Destroy(bg, sandboxID)
+		}
+		_ = e.st.AddEvent(bg, sessionID, "voided",
+			map[string]any{"reason": "reset_failed", "error": err.Error()})
+		_ = e.st.EndSession(bg, sessionID, "voided", nil)
+		return err
+	}
 	sb, err := e.rt.Create(ctx, e.specFor(ex, sessionID))
 	if err != nil {
-		return fmt.Errorf("recreate sandbox: %w", err)
+		return void("", fmt.Errorf("recreate sandbox: %w", err))
 	}
 	if err := e.st.SetSandbox(ctx, sessionID, sb.ID); err != nil {
-		return err
+		return void(sb.ID, err)
 	}
 	if _, err := e.prepare(ctx, sb.ID, ex, scriptEnv(sess.Seed, sess.VariantValues)); err != nil {
-		return err
+		return void(sb.ID, err)
 	}
 	return e.st.AddEvent(ctx, sessionID, "reset", nil)
 }
@@ -330,7 +382,7 @@ func (e *Engine) GiveUp(ctx context.Context, sessionID string) (*LevelChange, er
 		return nil, err
 	}
 	if sess.HintsRevealed < 3 {
-		return nil, fmt.Errorf("give up becomes available only after hint 3")
+		return nil, ErrGiveUpTooEarly
 	}
 	ex, err := exercise.Load(filepath.Join(e.exDir, sess.ExerciseID))
 	if err != nil {
@@ -375,7 +427,7 @@ func (e *Engine) Shell(ctx context.Context, sessionID string) error {
 		return err
 	}
 	if e.sheller == nil {
-		return fmt.Errorf("this runtime does not support an interactive shell")
+		return ErrNoShell
 	}
 	return e.sheller.Shell(ctx, sess.SandboxID, []string{"/bin/bash"})
 }

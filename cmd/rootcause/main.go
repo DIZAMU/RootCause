@@ -20,7 +20,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		usage()
+		fmt.Fprint(os.Stderr, cli.Usage("en")) // no profile is loaded yet
 		os.Exit(2)
 	}
 	ctx := context.Background()
@@ -73,12 +73,11 @@ func runApp(ctx context.Context, cmd string, args []string) int {
 	case "lang":
 		cmdErr = app.Lang(ctx, args)
 	default:
-		fmt.Fprintf(os.Stderr, "unknown command %q\n", cmd)
-		usage()
+		fmt.Fprint(os.Stderr, app.UnknownCommand(cmd))
 		return 2
 	}
 	if cmdErr != nil {
-		fmt.Fprintln(os.Stderr, cmdErr)
+		fmt.Fprintln(os.Stderr, app.Describe(cmdErr))
 		return 1
 	}
 	return 0
@@ -92,29 +91,6 @@ func cmdInit(ctx context.Context) int {
 	}
 	fmt.Println(msg)
 	return 0
-}
-
-func usage() {
-	fmt.Fprint(os.Stderr, `rootcause - hands-on IT troubleshooting practice
-
-Play:
-  init                 Start Postgres, run migrations, create the local profile
-  start <exercise-id>  Start a specific exercise
-  ticket               Show the active ticket again
-  shell                Open a shell in the active sandbox
-  hint                 Reveal the next hint
-  check                Grade the active session
-  reset                Fresh copy of the same problem
-  giveup               End the session and show the walkthrough (after hint 3)
-  status               Active session and best stars
-  list                 All exercises with best stars
-  lang en|no           Set the interface language
-
-Developer:
-  validate <dir>              Validate an exercise definition
-  vars --seed <n> <dir>       Print a seed's variant values
-  selftest --seed <n> <dir>   Prove an exercise end to end in real sandboxes
-`)
 }
 
 // --- developer commands (no database) --------------------------------------
