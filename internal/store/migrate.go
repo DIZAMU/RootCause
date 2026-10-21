@@ -6,16 +6,44 @@ import (
 	"fmt"
 	"io/fs"
 	"sort"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 //go:embed migrations/*.sql
 var migrationFS embed.FS
 
+// migrateLockKey names the Postgres advisory lock that serializes migrations.
+// Two processes starting at once, such as two CLI commands on a new install or
+// two test packages, then never apply the same migration twice.
+const migrateLockKey int64 = 7300_0001
+
 // Migrate applies every migration not yet applied, in filename order, each in
 // its own transaction. Applied migrations are recorded in schema_migrations, so
 // re-running is a no-op. Migrations are versioned SQL files (spec section 9.1).
+//
+// It holds an advisory lock while it works, so concurrent callers wait their
+// turn and then find the migrations already applied.
 func (s *Store) Migrate(ctx context.Context) error {
-	if _, err := s.pool.Exec(ctx, `
+	// An advisory lock belongs to one database connection, so everything here
+	// runs on a single connection taken from the pool.
+	conn, err := s.pool.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("acquire connection: %w", err)
+	}
+	defer conn.Release()
+	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock($1)`, migrateLockKey); err != nil {
+		return fmt.Errorf("lock migrations: %w", err)
+	}
+	defer func() {
+		// If the unlock fails, close the connection: that releases the lock,
+		// and the pool will not hand out a connection that still holds it.
+		if _, err := conn.Exec(context.Background(), `SELECT pg_advisory_unlock($1)`, migrateLockKey); err != nil {
+			_ = conn.Conn().Close(context.Background())
+		}
+	}()
+
+	if _, err := conn.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS schema_migrations (
 			version    TEXT PRIMARY KEY,
 			applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -23,16 +51,17 @@ func (s *Store) Migrate(ctx context.Context) error {
 		return fmt.Errorf("create schema_migrations: %w", err)
 	}
 
-	applied, err := s.appliedMigrations(ctx)
+	// Read the applied set only after taking the lock, so a migration another
+	// process just applied is seen and skipped.
+	applied, err := appliedMigrations(ctx, conn)
 	if err != nil {
 		return err
 	}
 
-	files, err := fs.Glob(migrationFS, "migrations/*.sql")
+	files, err := migrationFiles()
 	if err != nil {
-		return fmt.Errorf("list migrations: %w", err)
+		return err
 	}
-	sort.Strings(files)
 
 	for _, file := range files {
 		version := baseName(file)
@@ -43,16 +72,26 @@ func (s *Store) Migrate(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("read %s: %w", file, err)
 		}
-		if err := s.applyOne(ctx, version, string(sqlBytes)); err != nil {
+		if err := applyOne(ctx, conn, version, string(sqlBytes)); err != nil {
 			return fmt.Errorf("apply %s: %w", version, err)
 		}
 	}
 	return nil
 }
 
+// migrationFiles lists the embedded migration files in the order to apply them.
+func migrationFiles() ([]string, error) {
+	files, err := fs.Glob(migrationFS, "migrations/*.sql")
+	if err != nil {
+		return nil, fmt.Errorf("list migrations: %w", err)
+	}
+	sort.Strings(files)
+	return files, nil
+}
+
 // applyOne runs one migration and records it, atomically.
-func (s *Store) applyOne(ctx context.Context, version, sql string) error {
-	tx, err := s.pool.Begin(ctx)
+func applyOne(ctx context.Context, conn *pgxpool.Conn, version, sql string) error {
+	tx, err := conn.Begin(ctx)
 	if err != nil {
 		return err
 	}
@@ -68,8 +107,8 @@ func (s *Store) applyOne(ctx context.Context, version, sql string) error {
 	return tx.Commit(ctx)
 }
 
-func (s *Store) appliedMigrations(ctx context.Context) (map[string]bool, error) {
-	rows, err := s.pool.Query(ctx, `SELECT version FROM schema_migrations`)
+func appliedMigrations(ctx context.Context, conn *pgxpool.Conn) (map[string]bool, error) {
+	rows, err := conn.Query(ctx, `SELECT version FROM schema_migrations`)
 	if err != nil {
 		return nil, fmt.Errorf("read schema_migrations: %w", err)
 	}
