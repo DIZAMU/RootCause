@@ -23,10 +23,13 @@ type Runtime interface {
 // SandboxSpec describes a sandbox to create. Security defaults (spec section
 // 13.1) are applied by the implementation: all capabilities dropped, limits
 // enforced, no Docker socket, no host network, no privileged mode.
+//
+// There is deliberately no environment field: RC_SEED and RC_VAR_* values are
+// passed only to the commands that need them (setup, break, check), so the
+// learner cannot read them from the sandbox's environment.
 type SandboxSpec struct {
 	Name    string            // container name, unique per session
 	Image   string            // exercise image
-	Env     map[string]string // RC_SEED and RC_VAR_* values
 	Memory  string            // e.g. "256Mi"
 	CPUs    float64           // e.g. 0.5
 	Network string            // "none" | "internal"

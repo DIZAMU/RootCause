@@ -10,11 +10,12 @@ hints:
   - "Linje {line} i nginx-konfigurasjonen har en syntaksfeil. Rett den og start nginx."
 walkthrough: |
   Nettstedet gikk ned fordi nginx-konfigurasjonen har en syntaksfeil, så nginx
-  starter ikke. Finn den med nginx -t, som viser filen og linjen for den første
-  feilen. Åpne den linjen i /etc/nginx/conf.d/rootcause.conf og rett feilen, et
-  manglende semikolon på slutten av en linje. Kjør nginx -t på nytt til testen
-  er vellykket, og start deretter nginx. {site_name}-nettstedet svarer igjen på
-  port {port}.
+  starter ikke. Finn den med nginx -t, som viser filen og linjen der nginx
+  oppdaget feilen. Et manglende semikolon blir ofte rapportert på linjen etter
+  selve feilen, fordi nginx først merker det når det leser neste ord. Her
+  manglet linje {line} i /etc/nginx/conf.d/rootcause.conf semikolonet på
+  slutten. Legg det til, kjør nginx -t på nytt til testen er vellykket, og
+  start deretter nginx. {site_name}-nettstedet svarer igjen på port {port}.
 feedback:
   site_unreachable: "Nettstedet svarer fortsatt ikke på porten sin."
   wrong_content: "Noe svarer, men det er ikke den opprinnelige {site_name}-siden."

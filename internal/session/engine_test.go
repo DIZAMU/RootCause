@@ -17,9 +17,9 @@ import (
 // asserts the right events are logged. It needs both Docker and Postgres; it
 // skips otherwise.
 func TestPlaySvc01(t *testing.T) {
-	dsn := store.DSNFromEnv()
+	dsn := store.TestDSN()
 	if dsn == "" {
-		t.Skip("RC_DATABASE_URL not set")
+		t.Skip("RC_TEST_DATABASE_URL not set to a database ending in _test")
 	}
 	if err := exec.Command("docker", "info").Run(); err != nil {
 		t.Skip("docker not reachable:", err)
@@ -106,6 +106,11 @@ func TestPlaySvc01(t *testing.T) {
 	var types []string
 	for _, e := range events {
 		types = append(types, e.Type)
+	}
+	// A level_changed event may follow, depending on earlier sessions in the
+	// test database; it is not part of this assertion.
+	if n := len(types); n > 0 && types[n-1] == "level_changed" {
+		types = types[:n-1]
 	}
 	want := []string{"session_started", "check_run", "check_run", "solved"}
 	if len(types) != len(want) {

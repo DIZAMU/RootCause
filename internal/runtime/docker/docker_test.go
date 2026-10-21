@@ -3,7 +3,9 @@ package docker
 import (
 	"bytes"
 	"context"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -25,15 +27,32 @@ func newOrSkip(t *testing.T) *Runtime {
 	return r
 }
 
-const testImage = "alpine:latest"
+// testImage is built from testImageBase with a long-running PID 1, so the test
+// goes through the real Create path with every security flag.
+const (
+	testImageBase = "alpine:latest"
+	testImage     = "rootcause/runtime-test:latest"
+)
+
+func buildTestImage(t *testing.T, ctx context.Context, r *Runtime) {
+	t.Helper()
+	dir := t.TempDir()
+	dockerfile := "FROM " + testImageBase + "\nENTRYPOINT [\"sleep\", \"infinity\"]\n"
+	if err := os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte(dockerfile), 0o644); err != nil {
+		t.Fatalf("write Dockerfile: %v", err)
+	}
+	if err := r.BuildImage(ctx, testImage, dir); err != nil {
+		t.Fatalf("build test image: %v", err)
+	}
+}
 
 func TestSandboxLifecycle(t *testing.T) {
 	r := newOrSkip(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
+	buildTestImage(t, ctx, r)
 
 	name := "rc-test-lifecycle-" + sanitize(t.Name())
-	// keep PID 1 alive so we can exec into it
 	_ = r.Destroy(ctx, name)
 	spec := runtime.SandboxSpec{
 		Name:    name,
@@ -41,19 +60,31 @@ func TestSandboxLifecycle(t *testing.T) {
 		Memory:  "256Mi",
 		CPUs:    0.5,
 		Network: "none",
-		Env:     map[string]string{"RC_SEED": "1"},
+		Caps:    []string{"SETUID"},
 		Labels:  map[string]string{"rootcause.session": "test-session"},
 	}
-	// alpine's default command exits immediately; override by creating with a
-	// long-running PID 1 via a spec image that sleeps. We use `sleep` through Exec
-	// after starting a kept-alive container.
-	sb, err := r.createSleeping(ctx, spec)
+	sb, err := r.Create(ctx, spec)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	t.Cleanup(func() { _ = r.Destroy(context.Background(), name) })
 	if sb.ID == "" {
 		t.Fatal("create returned empty id")
+	}
+
+	// The security flags from spec section 13.1 are really applied.
+	out, err := exec.Command("docker", "inspect", "--format",
+		"{{.HostConfig.CapDrop}}|{{.HostConfig.CapAdd}}|{{.HostConfig.PidsLimit}}|"+
+			"{{.HostConfig.NetworkMode}}|{{.HostConfig.Privileged}}|{{.HostConfig.Init}}|"+
+			"{{.HostConfig.SecurityOpt}}|{{.HostConfig.Binds}}",
+		name).Output()
+	if err != nil {
+		t.Fatalf("inspect: %v", err)
+	}
+	got := strings.TrimSpace(string(out))
+	want := "[ALL]|[CAP_SETUID]|256|none|false|true|[no-new-privileges]|[]"
+	if got != want {
+		t.Errorf("sandbox flags = %q, want %q", got, want)
 	}
 
 	// Exec: capture output and exit code.
@@ -123,39 +154,19 @@ func TestSandboxLifecycle(t *testing.T) {
 	}
 }
 
-// createSleeping starts a container whose PID 1 stays alive, so the test can
-// exec into it. It mirrors Create but appends a long-running command.
-func (r *Runtime) createSleeping(ctx context.Context, spec runtime.SandboxSpec) (runtime.Sandbox, error) {
-	args := []string{
-		"run", "-d",
-		"--name", spec.Name,
-		"--cap-drop", "ALL",
-		"--security-opt", "no-new-privileges",
-		"--pids-limit", "256",
-		"--network", networkArg(spec.Network),
-		"--label", labelSandbox + "=true",
-		"--memory", dockerMemory(spec.Memory),
-		"--label", "rootcause.session=test-session",
-		"--entrypoint", "sleep",
-		spec.Image, "infinity",
+func TestIsolated(t *testing.T) {
+	cases := map[string]bool{
+		`["name=seccomp,profile=builtin"]`:                 false,
+		`["name=seccomp,profile=builtin","name=userns"]`:   true,
+		`["name=seccomp,profile=builtin","name=rootless"]`: true,
+		`["name=apparmor","name=seccomp,profile=builtin"]`: false,
 	}
-	out, errOut, err := r.run(ctx, nil, args...)
-	if err != nil {
-		return runtime.Sandbox{}, errorf(err, errOut)
+	for opts, want := range cases {
+		if got := isolated(opts); got != want {
+			t.Errorf("isolated(%s) = %v, want %v", opts, got, want)
+		}
 	}
-	return runtime.Sandbox{ID: strings.TrimSpace(string(out)), Name: spec.Name, Image: spec.Image}, nil
 }
-
-func errorf(err error, errOut string) error {
-	return &runErr{err: err, out: strings.TrimSpace(errOut)}
-}
-
-type runErr struct {
-	err error
-	out string
-}
-
-func (e *runErr) Error() string { return e.err.Error() + ": " + e.out }
 
 func sanitize(s string) string {
 	return strings.NewReplacer("/", "-", " ", "-").Replace(s)

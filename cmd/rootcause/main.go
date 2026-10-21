@@ -14,6 +14,8 @@ import (
 
 	"github.com/DIZAMU/RootCause/internal/cli"
 	"github.com/DIZAMU/RootCause/internal/exercise"
+	"github.com/DIZAMU/RootCause/internal/runtime/docker"
+	"github.com/DIZAMU/RootCause/internal/session"
 )
 
 func main() {
@@ -30,6 +32,8 @@ func main() {
 		os.Exit(cmdValidate(args))
 	case "vars":
 		os.Exit(cmdVars(args))
+	case "selftest":
+		os.Exit(cmdSelfTest(ctx, args))
 	case "init":
 		os.Exit(cmdInit(ctx))
 	default:
@@ -109,6 +113,7 @@ Play:
 Developer:
   validate <dir>              Validate an exercise definition
   vars --seed <n> <dir>       Print a seed's variant values
+  selftest --seed <n> <dir>   Prove an exercise end to end in real sandboxes
 `)
 }
 
@@ -128,29 +133,29 @@ func cmdValidate(args []string) int {
 	return 0
 }
 
-func cmdVars(args []string) int {
-	var seed int64
-	var dir string
-	seedSet := false
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--seed":
-			if i+1 >= len(args) {
-				fmt.Fprintln(os.Stderr, "vars: --seed needs a value")
-				return 2
-			}
-			i++
-			if _, err := fmt.Sscan(args[i], &seed); err != nil {
-				fmt.Fprintf(os.Stderr, "vars: --seed must be a number, got %q\n", args[i])
-				return 2
-			}
-			seedSet = true
-		default:
-			dir = args[i]
-		}
+// cmdSelfTest runs an exercise's unsolved and solved scenarios in real
+// sandboxes, with the same flags a session uses. It needs Docker, not the
+// database. scripts/validate-exercise.sh calls it.
+func cmdSelfTest(ctx context.Context, args []string) int {
+	seed, dir, ok := seedAndDir("selftest", args)
+	if !ok {
+		return 2
 	}
-	if dir == "" || !seedSet {
-		fmt.Fprintln(os.Stderr, "vars: usage: rootcause vars --seed <n> <exercise-dir>")
+	rt, err := docker.New()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	if err := session.SelfTest(ctx, rt, rt, dir, seed, os.Stdout); err != nil {
+		fmt.Fprintln(os.Stderr, "FAIL:", err)
+		return 1
+	}
+	return 0
+}
+
+func cmdVars(args []string) int {
+	seed, dir, ok := seedAndDir("vars", args)
+	if !ok {
 		return 2
 	}
 	ex, err := exercise.Load(dir)
@@ -162,6 +167,35 @@ func cmdVars(args []string) int {
 		fmt.Printf("RC_VAR_%s=%s\n", envName(name), shellQuote(value))
 	}
 	return 0
+}
+
+// seedAndDir parses "--seed <n> <exercise-dir>" for the developer commands.
+func seedAndDir(cmd string, args []string) (int64, string, bool) {
+	var seed int64
+	var dir string
+	seedSet := false
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--seed":
+			if i+1 >= len(args) {
+				fmt.Fprintf(os.Stderr, "%s: --seed needs a value\n", cmd)
+				return 0, "", false
+			}
+			i++
+			if _, err := fmt.Sscan(args[i], &seed); err != nil {
+				fmt.Fprintf(os.Stderr, "%s: --seed must be a number, got %q\n", cmd, args[i])
+				return 0, "", false
+			}
+			seedSet = true
+		default:
+			dir = args[i]
+		}
+	}
+	if dir == "" || !seedSet {
+		fmt.Fprintf(os.Stderr, "%s: usage: rootcause %s --seed <n> <exercise-dir>\n", cmd, cmd)
+		return 0, "", false
+	}
+	return seed, dir, true
 }
 
 func envName(name string) string {

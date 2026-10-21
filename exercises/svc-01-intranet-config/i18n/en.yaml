@@ -11,10 +11,12 @@ hints:
 walkthrough: |
   The site went down because the nginx configuration has a syntax error, so
   nginx will not start. Find it with nginx -t, which prints the file and the
-  line of the first error. Open that line in /etc/nginx/conf.d/rootcause.conf
-  and fix the mistake, a missing semicolon at the end of a directive. Run
-  nginx -t again until it reports the test is successful, then start nginx. The
-  {site_name} site responds again on port {port}.
+  line where nginx noticed the error. A missing semicolon is often reported on
+  the line after the real mistake, because nginx only notices it when it reads
+  the next word. Here line {line} of /etc/nginx/conf.d/rootcause.conf was
+  missing the semicolon at the end of its directive. Add it, run nginx -t again
+  until it reports the test is successful, then start nginx. The {site_name}
+  site responds again on port {port}.
 feedback:
   site_unreachable: "The site still does not respond on its port."
   wrong_content: "Something responds, but it is not the original {site_name} page."

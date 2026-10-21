@@ -6,6 +6,7 @@ package cli
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -63,6 +64,14 @@ func NewApp(ctx context.Context) (*App, error) {
 	}
 	rt, err := docker.New()
 	if err != nil {
+		return nil, err
+	}
+	// Refuse to run sessions when root in a sandbox would be root on the host
+	// (spec section 13.1, OQ-3).
+	if err := rt.CheckIsolation(ctx); err != nil {
+		if errors.Is(err, docker.ErrNotIsolated) {
+			return nil, fmt.Errorf("%s", bundle.T(learner.Lang, "error.not_isolated", nil))
+		}
 		return nil, err
 	}
 	eng := session.New(rt, rt, rt, st, filepath.Join(root, "exercises"))

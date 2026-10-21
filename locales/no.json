@@ -28,5 +28,6 @@
   "list.row": "{stars}  {id}  [{topic}, vanskelighetsgrad {difficulty}]",
   "lang.set": "Grensesnittspråk satt til {lang}.",
   "lang.usage": "Bruk: rootcause lang en|no",
-  "error.needs_init": "Får ikke kontakt med databasen. Kjør: rootcause init"
+  "error.needs_init": "Får ikke kontakt med databasen. Kjør: rootcause init",
+  "error.not_isolated": "Docker kobler root i sandkassen til root på verten. Slå på userns-remap eller rootless Docker først (se OQ-3 i docs/SPEC.md)."
 }

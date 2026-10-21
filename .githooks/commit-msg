@@ -13,8 +13,9 @@ if grep -qiE '^[[:space:]]*Co-authored-by:' "$msg_file"; then
     exit 1
 fi
 
-# Reject any line that starts with "Generated with" (case-insensitive).
-if grep -qiE '^[[:space:]]*Generated with' "$msg_file"; then
+# Reject any line that starts with "Generated with" (case-insensitive), also
+# when symbols or an emoji come first, as in tool attribution lines.
+if grep -qiE '^[^[:alnum:]]*Generated with' "$msg_file"; then
     echo "commit-msg: rejected -- a line starting with 'Generated with' is not allowed in this repo." >&2
     exit 1
 fi

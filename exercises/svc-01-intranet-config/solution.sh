@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 # solution.sh is the reference fix, used only by CI (never copied into a session
-# image or a running session for the learner). It restores the correct config by
-# re-rendering the healthy state, then starts nginx.
+# image or a running session for the learner). It fixes the fault the way a
+# learner would: put the missing semicolon back, test the config, start nginx.
 set -euo pipefail
 
-/opt/rootcause/render.sh        # rewrite the correct config and page
-pkill -x nginx 2>/dev/null || true
-sleep 0.3
-nginx                            # start with the now-valid config
+conf=/etc/nginx/conf.d/rootcause.conf
+
+# A directive line that does not end in ";", "{" or "}" is missing its ";".
+sed -i -E '/^[[:space:]]*(listen|root|index|try_files)[[:space:]]/{/;[[:space:]]*$/!s/[[:space:]]*$/;/}' "$conf"
+
+nginx -t
+nginx

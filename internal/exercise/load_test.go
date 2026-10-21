@@ -48,6 +48,7 @@ func TestValidateSchemaRejectsBadFields(t *testing.T) {
 		{"bad runs_from", "runs_from", func(e *Exercise) { e.Check.RunsFrom = "nowhere" }},
 		{"bad id", "id", func(e *Exercise) { e.ID = "Bad_ID" }},
 		{"empty variant", "no values", func(e *Exercise) { e.Variants = map[string]StringList{"x": {}} }},
+		{"disallowed capability", "not allowed", func(e *Exercise) { e.Capabilities = []string{"SYS_ADMIN"} }},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -61,6 +62,38 @@ func TestValidateSchemaRejectsBadFields(t *testing.T) {
 				t.Errorf("error %q should mention %q", err.Error(), c.want)
 			}
 		})
+	}
+}
+
+func TestAllowedCapabilityPasses(t *testing.T) {
+	e := &Exercise{
+		ID: "ex", Version: 1, Topic: "services", Difficulty: 1,
+		EstimatedMinutes: 10, Network: "none",
+		Resources:     Resources{Memory: "256Mi", CPUs: 0.5},
+		SessionTTLMin: 60,
+		Check:         Check{RunsFrom: "sandbox", Before: "none"},
+		Capabilities:  []string{"SETUID", "SETGID", "CHOWN"},
+	}
+	if err := e.validateSchema(); err != nil {
+		t.Fatalf("allowed capabilities rejected: %v", err)
+	}
+}
+
+func TestCompletenessFindsGaps(t *testing.T) {
+	var full I18n
+	full.Ticket.Title, full.Ticket.From, full.Ticket.Body = "t", "f", "b"
+	full.Walkthrough = "w"
+	full.Hints = []string{"1", "2", "3"}
+	if p := completeness("en", &full); len(p) != 0 {
+		t.Fatalf("complete file reported problems: %v", p)
+	}
+
+	gaps := full
+	gaps.Ticket.Title = " "
+	gaps.Hints = []string{"1", "2"}
+	p := completeness("no", &gaps)
+	if len(p) != 2 {
+		t.Fatalf("want 2 problems (empty title, 2 hints), got %d: %v", len(p), p)
 	}
 }
 

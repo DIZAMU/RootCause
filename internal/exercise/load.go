@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -26,14 +27,26 @@ var requiredFiles = []string{
 var languages = []string{"en", "no"}
 
 var (
-	validTopics    = map[string]bool{"permissions": true, "services": true, "logs": true, "networking": true, "disk": true}
-	validNetwork   = map[string]bool{"none": true, "internal": true}
-	validRunsFrom  = map[string]bool{"sandbox": true, "runner": true}
-	validBefore    = map[string]bool{"none": true, "restart": true}
-	idPattern      = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
-	memoryPattern  = regexp.MustCompile(`^[0-9]+(Mi|Gi)$`)
-	capPattern     = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
+	validTopics   = map[string]bool{"permissions": true, "services": true, "logs": true, "networking": true, "disk": true}
+	validNetwork  = map[string]bool{"none": true, "internal": true}
+	validRunsFrom = map[string]bool{"sandbox": true, "runner": true}
+	validBefore   = map[string]bool{"none": true, "restart": true}
+	idPattern     = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
+	memoryPattern = regexp.MustCompile(`^[0-9]+(Mi|Gi)$`)
+
+	// allowedCaps are the only Linux capabilities an exercise may add back after
+	// the sandbox drops all of them (spec section 13.1). Each one is needed by
+	// ordinary services (dropping privileges, owning files, binding low ports).
+	// Capabilities that weaken isolation, such as SYS_ADMIN, NET_ADMIN or
+	// SYS_PTRACE, are deliberately absent: adding one needs an owner decision.
+	allowedCaps = map[string]bool{
+		"CHOWN": true, "DAC_OVERRIDE": true, "FOWNER": true, "FSETID": true,
+		"KILL": true, "SETGID": true, "SETUID": true, "NET_BIND_SERVICE": true,
+	}
 )
+
+// hintTiers is the number of hints every exercise defines (spec section 3).
+const hintTiers = 3
 
 // Load reads exercise.yaml from dir, then validates the schema, the required
 // files and the two language files. It returns a fully validated Exercise or an
@@ -114,8 +127,8 @@ func (e *Exercise) validateSchema() error {
 		}
 	}
 	for _, c := range e.Capabilities {
-		if !capPattern.MatchString(c) {
-			add("capability %q must be an uppercase name like SETUID", c)
+		if !allowedCaps[c] {
+			add("capability %q is not allowed; allowed: %s", c, sortedKeys(allowedCaps))
 		}
 	}
 	return errors.Join(p...)
@@ -135,9 +148,10 @@ func (e *Exercise) validateFiles() error {
 	return errors.Join(p...)
 }
 
-// validateI18n loads both language files and checks that they define the same
-// shape: the same ticket fields, the same number of hints, a walkthrough, and
-// the same feedback keys (spec section 4.4).
+// validateI18n loads both language files and checks that each is complete
+// (ticket fields, walkthrough and exactly three hints, none empty) and that both
+// define the same shape: the same number of hints and the same feedback keys
+// (spec section 4.4).
 func (e *Exercise) validateI18n() error {
 	if e.dir == "" {
 		return nil
@@ -151,6 +165,7 @@ func (e *Exercise) validateI18n() error {
 			continue
 		}
 		texts[lang] = t
+		p = append(p, completeness(lang, t)...)
 	}
 	if len(texts) == len(languages) {
 		if diff := shapeDiff(texts["en"], texts["no"]); diff != "" {
@@ -174,6 +189,28 @@ func (e *Exercise) LoadI18n(lang string) (*I18n, error) {
 		return nil, fmt.Errorf("parse %s: %w", filepath.Join("i18n", lang+".yaml"), err)
 	}
 	return &t, nil
+}
+
+// completeness returns the problems in one language file: empty ticket fields,
+// an empty walkthrough, or a hint count other than hintTiers.
+func completeness(lang string, t *I18n) []error {
+	var p []error
+	empty := func(field, v string) {
+		if strings.TrimSpace(v) == "" {
+			p = append(p, fmt.Errorf("%s: %s is empty", lang, field))
+		}
+	}
+	empty("ticket.title", t.Ticket.Title)
+	empty("ticket.from", t.Ticket.From)
+	empty("ticket.body", t.Ticket.Body)
+	empty("walkthrough", t.Walkthrough)
+	if len(t.Hints) != hintTiers {
+		p = append(p, fmt.Errorf("%s: has %d hints, want %d", lang, len(t.Hints), hintTiers))
+	}
+	for i, h := range t.Hints {
+		empty(fmt.Sprintf("hint %d", i+1), h)
+	}
+	return p
 }
 
 // shapeDiff returns a human-readable reason the two language files differ in
@@ -206,4 +243,14 @@ func diffKeys(a, b map[string]string) string {
 		return ""
 	}
 	return fmt.Sprintf("%v", missing)
+}
+
+// sortedKeys lists a set's keys in order, for stable error messages.
+func sortedKeys(set map[string]bool) []string {
+	keys := make([]string, 0, len(set))
+	for k := range set {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
