@@ -1,22 +1,15 @@
 #!/usr/bin/env bash
-# render.sh builds the HEALTHY state of the machine from the variant values.
-#
-# It is baked into the image and run at container start (by entrypoint.sh) and
-# again by solution.sh as the reference fix. Keeping the correct config in one
-# place means the healthy machine and the reference solution can never drift
-# apart. It never plants a fault.
+# setup.sh builds the HEALTHY state of the machine from the variant values and
+# starts nginx. The engine copies it in at session start, runs it as root, then
+# deletes it, the same way as break.sh. It is never part of the image, so the
+# learner cannot read the correct config or re-run it as a shortcut.
 set -euo pipefail
 
-: "${RC_VAR_PORT:?render.sh needs RC_VAR_PORT}"
-: "${RC_VAR_SITE_NAME:?render.sh needs RC_VAR_SITE_NAME}"
+: "${RC_VAR_PORT:?setup.sh needs RC_VAR_PORT}"
+: "${RC_VAR_SITE_NAME:?setup.sh needs RC_VAR_SITE_NAME}"
 
 conf=/etc/nginx/conf.d/rootcause.conf
 html=/usr/share/nginx/html/index.html
-
-# The nginx image ships a default site on port 80. Remove it so the only site
-# is ours, on the variant's port. (A learner who "fixes" the fault by falling
-# back to the default config will then be serving nothing on the required port.)
-rm -f /etc/nginx/conf.d/default.conf
 
 # Unquoted heredoc: ${RC_VAR_*} expand, \$uri stays literal for nginx.
 cat > "$conf" <<CONF
@@ -49,3 +42,5 @@ cat > "$html" <<HTML
 </body>
 </html>
 HTML
+
+nginx   # daemonizes and returns; the healthy site is now served
