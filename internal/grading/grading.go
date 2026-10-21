@@ -46,15 +46,29 @@ func Classify(status string, stars *int, hadCheck bool) Kind {
 	}
 }
 
+// Outcome is one finished session as the level rule sees it.
+type Outcome struct {
+	Kind       Kind
+	Difficulty int // the exercise's difficulty, 1 to 3
+}
+
 // Level replays a topic's finished outcomes (oldest first) and returns the
 // resulting level, 1 to 3. Rule (spec 7.1): start at 1; two consecutive strong
-// solves level up; two consecutive fails level down; a level change resets the
-// streaks. Skipped outcomes are ignored entirely.
-func Level(kinds []Kind) int {
+// solves at the current level level up; two consecutive fails level down; a
+// level change resets the streaks.
+//
+// "At the current level" means the exercise's difficulty is at least the
+// current level. A strong solve of an easier exercise is neutral: like a
+// skipped outcome, it neither advances nor resets either streak. Fails count at
+// any difficulty.
+func Level(outcomes []Outcome) int {
 	level, up, down := 1, 0, 0
-	for _, k := range kinds {
-		switch k {
+	for _, o := range outcomes {
+		switch o.Kind {
 		case Strong:
+			if o.Difficulty < level {
+				continue
+			}
 			up++
 			down = 0
 		case Weak:

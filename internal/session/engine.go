@@ -251,12 +251,9 @@ func (e *Engine) applyLevel(ctx context.Context, learnerID int, topic, sessionID
 	if len(outs) == 0 {
 		return nil, nil
 	}
-	kinds := make([]grading.Kind, len(outs))
-	for i, o := range outs {
-		kinds[i] = grading.Classify(o.Status, o.Stars, o.HadCheck)
-	}
-	after := grading.Level(kinds)
-	before := grading.Level(kinds[:len(kinds)-1])
+	levels := levelOutcomes(outs)
+	after := grading.Level(levels)
+	before := grading.Level(levels[:len(levels)-1])
 	if after == before {
 		return nil, nil
 	}
@@ -266,6 +263,28 @@ func (e *Engine) applyLevel(ctx context.Context, learnerID int, topic, sessionID
 		return nil, err
 	}
 	return lc, nil
+}
+
+// TopicLevel returns the learner's current level in a topic (spec section
+// 7.1), replayed from every finished session in that topic.
+func (e *Engine) TopicLevel(ctx context.Context, learnerID int, topic string) (int, error) {
+	outs, err := e.st.TopicOutcomes(ctx, learnerID, topic)
+	if err != nil {
+		return 0, err
+	}
+	return grading.Level(levelOutcomes(outs)), nil
+}
+
+// levelOutcomes turns stored sessions into the inputs the level rule needs.
+func levelOutcomes(outs []store.Outcome) []grading.Outcome {
+	levels := make([]grading.Outcome, len(outs))
+	for i, o := range outs {
+		levels[i] = grading.Outcome{
+			Kind:       grading.Classify(o.Status, o.Stars, o.HadCheck),
+			Difficulty: o.Difficulty,
+		}
+	}
+	return levels
 }
 
 // Hint reveals the next hint tier and logs hint_revealed. It returns the tier

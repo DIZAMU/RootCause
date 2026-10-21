@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/DIZAMU/RootCause/internal/exercise"
-	"github.com/DIZAMU/RootCause/internal/grading"
 	"github.com/DIZAMU/RootCause/internal/i18n"
 	"github.com/DIZAMU/RootCause/internal/session"
 	"github.com/DIZAMU/RootCause/internal/store"
@@ -175,8 +174,8 @@ func (a *App) GiveUp(ctx context.Context) error {
 	return nil
 }
 
-// Status shows the active session and best stars per exercise. (Topic levels
-// and the review queue arrive with grading and dbt in later phases.)
+// Status shows the active session, the level per topic and the best stars per
+// exercise. (The review queue arrives with dbt in Phase 4.)
 func (a *App) Status(ctx context.Context) error {
 	if sess, ok, err := a.active(ctx); err != nil {
 		return err
@@ -196,15 +195,11 @@ func (a *App) Status(ctx context.Context) error {
 func (a *App) printLevels(ctx context.Context) error {
 	a.say("status.levels_header", nil)
 	for _, topic := range topics {
-		outs, err := a.st.TopicOutcomes(ctx, a.learner.ID, topic)
+		level, err := a.eng.TopicLevel(ctx, a.learner.ID, topic)
 		if err != nil {
 			return err
 		}
-		kinds := make([]grading.Kind, len(outs))
-		for i, o := range outs {
-			kinds[i] = grading.Classify(o.Status, o.Stars, o.HadCheck)
-		}
-		a.say("status.level_row", map[string]string{"topic": topic, "level": fmt.Sprint(grading.Level(kinds))})
+		a.say("status.level_row", map[string]string{"topic": topic, "level": fmt.Sprint(level)})
 	}
 	return nil
 }

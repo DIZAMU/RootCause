@@ -143,17 +143,20 @@ func (s *Store) IncHints(ctx context.Context, id string) (int, error) {
 
 // Outcome is one finished session's contribution to a topic level.
 type Outcome struct {
-	Status   string
-	Stars    *int
-	HadCheck bool
+	Status     string
+	Stars      *int
+	HadCheck   bool
+	Difficulty int // the exercise's difficulty, 1 to 3
 }
 
 // TopicOutcomes returns the learner's finished sessions in a topic, oldest
-// first, with whether each ran at least one check (needed to score expiries).
+// first, with whether each ran at least one check (needed to score expiries)
+// and the exercise's difficulty (needed for the level rule).
 func (s *Store) TopicOutcomes(ctx context.Context, learnerID int, topic string) ([]Outcome, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT s.status, s.stars,
-		       EXISTS (SELECT 1 FROM event e WHERE e.session_id = s.id AND e.type = 'check_run')
+		       EXISTS (SELECT 1 FROM event e WHERE e.session_id = s.id AND e.type = 'check_run'),
+		       x.difficulty
 		FROM session s
 		JOIN exercise x ON x.id = s.exercise_id
 		WHERE s.learner_id = $1 AND x.topic = $2
@@ -166,7 +169,7 @@ func (s *Store) TopicOutcomes(ctx context.Context, learnerID int, topic string) 
 	var out []Outcome
 	for rows.Next() {
 		var o Outcome
-		if err := rows.Scan(&o.Status, &o.Stars, &o.HadCheck); err != nil {
+		if err := rows.Scan(&o.Status, &o.Stars, &o.HadCheck, &o.Difficulty); err != nil {
 			return nil, err
 		}
 		out = append(out, o)
