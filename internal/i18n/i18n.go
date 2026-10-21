@@ -8,8 +8,26 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
+
+// placeholderPattern matches a {name} token. The name must follow the brace
+// directly, so text like "server {" or {"line": 5} is not a placeholder.
+var placeholderPattern = regexp.MustCompile(`\{([A-Za-z0-9_]+)\}`)
+
+// Placeholders returns the distinct {name} tokens in s, in order of first use.
+func Placeholders(s string) []string {
+	var names []string
+	seen := make(map[string]bool)
+	for _, m := range placeholderPattern.FindAllStringSubmatch(s, -1) {
+		if !seen[m[1]] {
+			seen[m[1]] = true
+			names = append(names, m[1])
+		}
+	}
+	return names
+}
 
 // Languages supported in v1.
 var Languages = []string{"en", "no"}
