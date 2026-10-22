@@ -1,0 +1,37 @@
+ticket:
+  title: "We can't save to the shared folder"
+  from: "{member}, {dept}"
+  body: |
+    Hi. Since this morning nobody in {dept} can save anything to our shared
+    folder {share}. We can open the files but saving fails with
+    "permission denied". IT tidied up the file server yesterday.
+    Can you fix it? My colleague {colleague} has the same problem.
+hints:
+  - "Look at who owns the share and what the owner, the group and others may do."
+  - "ls -ld shows a directory's owner, group and mode. id shows a user's groups."
+  - "{share} is owned by group {group_owner} with mode {mode}, and so are the files inside. Members of {dept} need the group to be {dept} and to have write access."
+walkthrough: |
+  On Linux every file and directory has an owner, a group and three sets of
+  permissions: for the owner, for the group and for everyone else. Creating a
+  file in a directory needs write access to the directory. Editing a file
+  needs write access to the file.
+
+  Run ls -ld {share} and ls -l {share}, then id {member}. {member} is in the
+  group {dept}, but the share was left with group {group_owner} and mode
+  {mode}, so the group rule does not give {dept} write access.
+
+  The fix is to give the share and everything in it back to the group and let
+  the group write:
+    chgrp -R {dept} {share}
+    chmod -R g+w {share}
+    chmod g+s {share}
+  The setgid bit (the s in drwxrws---) makes new files inherit the group, so
+  colleagues can keep working on each other's files.
+
+  chmod 777 would also let them save, but then every user on the server can
+  read and change the department's files. Always fix the group, not the world.
+feedback:
+  files_missing: "Files that were in the shared folder are missing or changed."
+  share_too_open: "The share can now be changed by people outside {dept}."
+  member_cannot_save: "A member of {dept} still cannot save a new file in the share."
+  member_cannot_edit: "A member of {dept} still cannot edit the existing files."

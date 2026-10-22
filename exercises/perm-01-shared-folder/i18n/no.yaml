@@ -1,0 +1,37 @@
+ticket:
+  title: "Vi får ikke lagret i fellesmappen"
+  from: "{member}, {dept}"
+  body: |
+    Hei. Siden i morges får ingen i {dept} lagret noe i fellesmappen vår
+    {share}. Vi kan åpne filene, men lagring feiler med "permission denied".
+    IT ryddet på filserveren i går. Kan du fikse det? Kollegaen min
+    {colleague} har samme problem.
+hints:
+  - "Se hvem som eier mappen, og hva eieren, gruppen og andre har lov til."
+  - "ls -ld viser eier, gruppe og rettigheter for en mappe. id viser gruppene til en bruker."
+  - "{share} eies av gruppen {group_owner} med rettighetene {mode}, og det samme gjelder filene i den. Medlemmer av {dept} trenger at gruppen er {dept} og har skrivetilgang."
+walkthrough: |
+  I Linux har hver fil og mappe en eier, en gruppe og tre sett med
+  rettigheter: for eieren, for gruppen og for alle andre. For å lage en fil i
+  en mappe trenger du skrivetilgang til mappen. For å endre en fil trenger du
+  skrivetilgang til filen.
+
+  Kjør ls -ld {share} og ls -l {share}, og deretter id {member}. {member} er
+  med i gruppen {dept}, men mappen sto igjen med gruppen {group_owner} og
+  rettighetene {mode}, så grupperegelen gir ikke {dept} skrivetilgang.
+
+  Løsningen er å gi mappen og alt i den tilbake til gruppen og la gruppen
+  skrive:
+    chgrp -R {dept} {share}
+    chmod -R g+w {share}
+    chmod g+s {share}
+  Setgid-biten (s-en i drwxrws---) gjør at nye filer arver gruppen, så
+  kollegaer kan fortsette å jobbe i hverandres filer.
+
+  chmod 777 ville også latt dem lagre, men da kan alle brukere på serveren
+  lese og endre avdelingens filer. Rett alltid gruppen, ikke alle.
+feedback:
+  files_missing: "Filer som lå i fellesmappen mangler eller er endret."
+  share_too_open: "Mappen kan nå endres av folk utenfor {dept}."
+  member_cannot_save: "Et medlem av {dept} får fortsatt ikke lagret en ny fil i mappen."
+  member_cannot_edit: "Et medlem av {dept} får fortsatt ikke endret filene som finnes."
