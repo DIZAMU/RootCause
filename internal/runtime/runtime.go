@@ -36,6 +36,14 @@ type SandboxSpec struct {
 	Caps    []string          // Linux capabilities to add back after dropping all
 	Pids    int               // process-count limit; 0 means the implementation default
 	Labels  map[string]string // bookkeeping labels, e.g. the session id
+	Init    string            // PID 1: "" or "none" (an init the runtime adds), "systemd" (the image boots systemd)
+	Tmpfs   []Tmpfs           // size-limited in-memory volumes
+}
+
+// Tmpfs is one size-limited in-memory volume in a sandbox.
+type Tmpfs struct {
+	Path string // absolute mount point
+	Size string // e.g. "32Mi"
 }
 
 // Sandbox is a created sandbox.

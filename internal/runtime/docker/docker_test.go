@@ -174,3 +174,40 @@ func TestIsolated(t *testing.T) {
 func sanitize(s string) string {
 	return strings.NewReplacer("/", "-", " ", "-").Replace(s)
 }
+
+// TestTmpfsAndInit checks that a tmpfs volume is mounted with its size limit
+// and that docker's init stays on for a plain sandbox.
+func TestTmpfsAndInit(t *testing.T) {
+	r := newOrSkip(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	buildTestImage(t, ctx, r)
+
+	name := "rc-test-tmpfs-" + sanitize(t.Name())
+	_ = r.Destroy(ctx, name)
+	if _, err := r.Create(ctx, runtime.SandboxSpec{
+		Name: name, Image: testImage, Memory: "256Mi", CPUs: 0.5, Network: "none",
+		Tmpfs: []runtime.Tmpfs{{Path: "/data", Size: "8Mi"}},
+	}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	t.Cleanup(func() { _ = r.Destroy(context.Background(), name) })
+
+	out, err := exec.Command("docker", "inspect", "--format",
+		"{{.HostConfig.Init}}|{{.HostConfig.Tmpfs}}", name).Output()
+	if err != nil {
+		t.Fatalf("inspect: %v", err)
+	}
+	if got, want := strings.TrimSpace(string(out)), "true|map[/data:size=8m]"; got != want {
+		t.Errorf("init|tmpfs = %q, want %q", got, want)
+	}
+
+	// Writing past the size limit fails with "No space left on device".
+	res, err := r.Exec(ctx, name, []string{"dd", "if=/dev/zero", "of=/data/fill", "bs=1M", "count=9"}, nil)
+	if err != nil {
+		t.Fatalf("exec dd: %v", err)
+	}
+	if res.ExitCode == 0 || !strings.Contains(string(res.Stderr), "No space left") {
+		t.Errorf("9M write into 8Mi tmpfs: exit %d, stderr %q; want a no-space failure", res.ExitCode, res.Stderr)
+	}
+}
