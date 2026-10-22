@@ -5,9 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/DIZAMU/RootCause/internal/exercise"
 	"github.com/DIZAMU/RootCause/internal/i18n"
@@ -21,9 +19,9 @@ import (
 //	A. unsolved: setup, break, then check must exit 1 (the fault is detected)
 //	B. solved:   setup, break, solution, then check must exit 0
 //
-// In scenario A it also asserts that no exercise script is left in the sandbox
-// and that no RC_ value is visible in its environment. It needs Docker, not
-// the database. Progress is written to log.
+// In scenario A it also asserts that no exercise script is left in the sandbox,
+// that no RC_ value is visible in its environment, and that nano and vi exist.
+// It needs Docker, not the database. Progress is written to log.
 func SelfTest(ctx context.Context, rt runtime.Runtime, builder Builder, exDir string, seed int64, log io.Writer) error {
 	ex, err := exercise.Load(exDir)
 	if err != nil {
@@ -55,7 +53,7 @@ func (e *Engine) selfTestScenario(ctx context.Context, ex *exercise.Exercise, se
 	_ = e.rt.Destroy(ctx, "rootcause-"+name)
 	spec := e.specFor(ex, name)
 	spec.Labels[labelSelftest] = "true" // the reaper never touches these
-	sb, err := e.rt.Create(ctx, spec)
+	sb, err := e.createSandbox(ctx, ex, spec)
 	if err != nil {
 		return err
 	}
@@ -69,6 +67,9 @@ func (e *Engine) selfTestScenario(ctx context.Context, ex *exercise.Exercise, se
 
 	if !solve {
 		if err := e.assertNoTrace(ctx, sb.ID); err != nil {
+			return err
+		}
+		if err := e.assertEditor(ctx, sb.ID); err != nil {
 			return err
 		}
 		if err := assertTextsFillable(ex, derived); err != nil {
@@ -85,14 +86,11 @@ func (e *Engine) selfTestScenario(ctx context.Context, ex *exercise.Exercise, se
 		}
 	}
 
-	if ex.Check.Before == "restart" {
-		if err := e.rt.Restart(ctx, sb.ID); err != nil {
-			return err
-		}
-		time.Sleep(time.Second)
-	}
-	res, err := e.execScript(ctx, sb.ID, ex.Dir(), "check.sh", env)
+	res, err := e.runCheck(ctx, ex, spec, sb.ID, env)
 	if err != nil {
+		return err
+	}
+	if err := e.assertNoRunner(ctx, spec.Name); err != nil {
 		return err
 	}
 	out := strings.TrimSpace(string(res.Stdout))
@@ -155,19 +153,52 @@ func assertFeedbackKnown(ex *exercise.Exercise, key string) error {
 	return nil
 }
 
-// assertNoTrace fails if an exercise script is still in the sandbox, or if the
-// seed or a variant value is visible in its environment.
-func (e *Engine) assertNoTrace(ctx context.Context, id string) error {
-	var paths []string
-	for _, name := range []string{"setup.sh", "break.sh", "check.sh", "solution.sh"} {
-		paths = append(paths, filepath.Join("/root", name))
-	}
-	res, err := e.rt.Exec(ctx, id, append([]string{"ls"}, paths...), nil)
+// assertEditor fails if the sandbox has no text editor, since most fixes
+// mean editing a file.
+func (e *Engine) assertEditor(ctx context.Context, id string) error {
+	res, err := e.rt.Exec(ctx, id, []string{"sh", "-c", "command -v nano && command -v vi"}, nil)
 	if err != nil {
 		return err
 	}
-	if res.ExitCode == 0 || len(strings.TrimSpace(string(res.Stdout))) > 0 {
-		return fmt.Errorf("exercise script left in the sandbox: %s", strings.TrimSpace(string(res.Stdout)))
+	if res.ExitCode != 0 {
+		return fmt.Errorf("sandbox lacks an editor: want both nano and vi, found %q", strings.TrimSpace(string(res.Stdout)))
+	}
+	return nil
+}
+
+// assertNoRunner fails if the runner container for a sandbox still exists
+// after its check, so a runner check cannot leak containers.
+func (e *Engine) assertNoRunner(ctx context.Context, sandboxName string) error {
+	boxes, err := e.rt.List(ctx)
+	if err != nil {
+		return err
+	}
+	for _, b := range boxes {
+		if b.Name == runnerSpec(runtime.SandboxSpec{Name: sandboxName}).Name {
+			return fmt.Errorf("runner container %s left behind after the check", b.Name)
+		}
+	}
+	return nil
+}
+
+// assertNoTrace fails if an exercise script is anywhere in the sandbox's
+// file system (left behind, or baked into the image), or if the seed or a
+// variant value is visible in its environment.
+func (e *Engine) assertNoTrace(ctx context.Context, id string) error {
+	find := []string{"find", "/", "-xdev", "-type", "f", "("}
+	for i, name := range []string{"setup.sh", "break.sh", "check.sh", "solution.sh"} {
+		if i > 0 {
+			find = append(find, "-o")
+		}
+		find = append(find, "-name", name)
+	}
+	find = append(find, ")", "-print")
+	res, err := e.rt.Exec(ctx, id, find, nil)
+	if err != nil {
+		return err
+	}
+	if found := strings.TrimSpace(string(res.Stdout)); found != "" {
+		return fmt.Errorf("exercise script found in the sandbox: %s", found)
 	}
 	res, err = e.rt.Exec(ctx, id, []string{"env"}, nil)
 	if err != nil {

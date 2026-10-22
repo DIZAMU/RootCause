@@ -11,14 +11,18 @@ import (
 	"github.com/DIZAMU/RootCause/internal/store"
 )
 
-// brokenRuntime creates sandboxes but every command in them fails, as when
-// the machine cannot plant its fault. It records what it destroys.
+// brokenRuntime creates sandboxes that pass the readiness probe, but every
+// other command in them fails, as when the machine cannot plant its fault. It
+// records what it destroys.
 type brokenRuntime struct{ destroyed []string }
 
 func (b *brokenRuntime) Create(_ context.Context, spec runtime.SandboxSpec) (runtime.Sandbox, error) {
 	return runtime.Sandbox{ID: "fake-" + spec.Name, Name: spec.Name, Labels: spec.Labels}, nil
 }
-func (b *brokenRuntime) Exec(context.Context, string, []string, io.Reader) (runtime.ExecResult, error) {
+func (b *brokenRuntime) Exec(_ context.Context, _ string, cmd []string, _ io.Reader) (runtime.ExecResult, error) {
+	if len(cmd) == 1 && cmd[0] == "true" {
+		return runtime.ExecResult{}, nil
+	}
 	return runtime.ExecResult{ExitCode: 1, Stderr: []byte("planted failure")}, nil
 }
 func (b *brokenRuntime) CopyIn(context.Context, string, string, []byte) error { return nil }
