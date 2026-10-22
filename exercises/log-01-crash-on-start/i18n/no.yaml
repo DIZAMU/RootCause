@@ -1,0 +1,34 @@
+ticket:
+  title: "Lagerapp vil ikke starte"
+  from: "Sofie Lund, Lager"
+  body: |
+    Hei. Lagerapp, lagersystemet vårt, har vært nede siden IT oppdaterte
+    innstillingene i morges. Vi prøver å starte den med /etc/init.d/lagerapp
+    start, og den sier ok, men ingenting virker, og den skal svare på port
+    {port}. Kan du finne ut hvorfor?
+hints:
+  - "En app som sier at den startet, men er borte like etter, har som regel skrevet hvorfor i loggen sin. Finn loggen til lagerapp."
+  - "Se i /var/log/lagerapp/. tail viser de siste linjene, og ERROR-linjene sier hva som er galt. /etc/init.d/lagerapp status viser om den kjører."
+  - "Innstillingen {setting} i seksjonen [{section}] i /etc/lagerapp/lagerapp.ini er feil eller mangler. Rett den, og start appen igjen."
+walkthrough: |
+  Init-skriptet starter lagerapp i bakgrunnen, så det melder ok før appen
+  har lest konfigurasjonen. Appen avslutter så, og /etc/init.d/lagerapp
+  status sier at den ikke kjører.
+
+  Når en tjeneste dør ved oppstart, les loggen først. tail
+  /var/log/lagerapp/lagerapp.log slutter med ERROR-linjer som sier hva som
+  var galt: her innstillingen {setting} i seksjonen [{section}] i
+  /etc/lagerapp/lagerapp.ini. Enten pekte data_dir på en mappe som ikke
+  finnes (lagerfilene ligger i /var/lib/lagerapp), eller så manglet
+  port-innstillingen (den skal være port = {port} under [server]).
+
+  Rett innstillingen, start appen med /etc/init.d/lagerapp start, og test
+  med curl http://127.0.0.1:{port}/health. Den viser konfigurasjonen som er
+  lastet, og tre lagerfiler.
+
+  Å lage en tom mappe på feil sti ville også fått appen til å starte, men
+  den ville ikke hatt noen lagerdata. Rett konfigurasjonen, ikke symptomet.
+feedback:
+  app_not_running: "Lagerapp kjører ikke som sin egen bruker."
+  health_unreachable: "Lagerapp svarer ikke på port {port}."
+  wrong_config_loaded: "Lagerapp svarer, men har ikke lastet riktige innstillinger og lagerdata."

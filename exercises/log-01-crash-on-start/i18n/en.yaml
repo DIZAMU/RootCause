@@ -1,0 +1,34 @@
+ticket:
+  title: "Lagerapp will not start"
+  from: "Sofie Lund, Warehouse"
+  body: |
+    Hi. Lagerapp, our stock system, has been down since IT updated its
+    settings this morning. We try to start it with /etc/init.d/lagerapp start
+    and it says ok, but nothing works and it should answer on port {port}.
+    Can you find out why?
+hints:
+  - "An app that says it started but is gone a moment later has usually written why in its log. Find lagerapp's log."
+  - "Look in /var/log/lagerapp/. tail shows the last lines, and the ERROR lines name the problem. /etc/init.d/lagerapp status shows whether it runs."
+  - "The setting {setting} in section [{section}] of /etc/lagerapp/lagerapp.ini is wrong or missing. Fix it, then start the app again."
+walkthrough: |
+  The init script starts lagerapp in the background, so it reports ok
+  before the app has read its config. The app then exits, and
+  /etc/init.d/lagerapp status says it is not running.
+
+  When a service dies on start, read its log first. tail
+  /var/log/lagerapp/lagerapp.log ends with ERROR lines that say what was
+  wrong: here the setting {setting} in section [{section}] of
+  /etc/lagerapp/lagerapp.ini. Either data_dir pointed at a directory that
+  does not exist (the stock files are in /var/lib/lagerapp), or the port
+  setting was missing (it should be port = {port} under [server]).
+
+  Fix the setting, start the app with /etc/init.d/lagerapp start, and test
+  curl http://127.0.0.1:{port}/health. It reports the loaded config and
+  three stock files.
+
+  Creating an empty directory at the wrong path would also let the app
+  start, but it would serve no stock data. Fix the config, not the symptom.
+feedback:
+  app_not_running: "Lagerapp is not running as its own user."
+  health_unreachable: "Lagerapp does not answer on port {port}."
+  wrong_config_loaded: "Lagerapp answers, but it has not loaded the correct settings and stock data."

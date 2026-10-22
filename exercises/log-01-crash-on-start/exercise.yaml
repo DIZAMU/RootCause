@@ -1,0 +1,18 @@
+id: log-01-crash-on-start
+version: 1
+topic: logs
+difficulty: 1
+estimated_minutes: 10
+network: none
+resources:
+  memory: 128Mi
+  cpus: 0.5
+session_ttl_minutes: 60
+check:
+  runs_from: sandbox
+  before: none
+# The init script starts the app as the lagerapp user (SETUID, SETGID) and
+# stops it again (KILL). CHOWN and DAC_OVERRIDE let root manage its files.
+capabilities: [SETUID, SETGID, KILL, CHOWN, DAC_OVERRIDE]
+variants:
+  port: [5000, 5050, 8000]
