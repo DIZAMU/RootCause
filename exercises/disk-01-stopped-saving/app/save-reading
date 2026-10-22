@@ -1,0 +1,13 @@
+#!/bin/sh
+# save-reading: stores one meter reading for maleapp in /srv/data/readings and
+# logs the result to /var/log/maleapp/maleapp.log.
+set -u
+log=/var/log/maleapp/maleapp.log
+file="/srv/data/readings/reading-$(date +%Y%m%d-%H%M%S)-$$.csv"
+if printf 'meter,value,time\nM-%s,%s,%s\n' "$$" "$(date +%s)" "$(date -Is)" > "$file" 2>/dev/null; then
+    echo "$(date '+%F %T') saved $file" >> "$log"
+else
+    rm -f "$file"
+    echo "$(date '+%F %T') ERROR could not write $file: No space left on device" >> "$log"
+    exit 1
+fi

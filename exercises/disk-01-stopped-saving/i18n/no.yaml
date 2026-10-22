@@ -1,0 +1,31 @@
+ticket:
+  title: "Måleappen har sluttet å lagre"
+  from: "Jonas Vik, Drift og eiendom"
+  body: |
+    Hei. Maleapp har ikke lagret en eneste måleravlesning siden i går kveld.
+    Målerne sender fortsatt, men ingenting nytt dukker opp. Dataene
+    ligger i /srv/data, og loggen ligger i /var/log/maleapp/. Ikke slett
+    referansefilene våre, appen trenger dem.
+hints:
+  - "Les loggen til appen, og se så på hvor full datavolumet er."
+  - "df -h viser ledig plass per filsystem. du -sh viser hvor mye en mappe inneholder, og ls -la viser også skjulte navn som starter med punktum."
+  - "{junk} tar omtrent {junk_mb} MB. Finn ut hva det er, og fjern det."
+walkthrough: |
+  Loggen sier "No space left on device": appen får ikke skrevet fordi
+  volumet er fullt. df -h /srv/data bekrefter at det er 100 % brukt.
+
+  Finn hva som tar plassen. du -sh /srv/data/* går glipp av skjulte mapper,
+  fordi * hopper over navn som starter med punktum. Bruk du -sh
+  /srv/data/.[!.]* /srv/data/* eller ls -la, eller søk etter store filer:
+    find /srv/data -type f -size +10M
+  Her var {junk} en gjenglemt eksport på omtrent {junk_mb} MB.
+
+  Slett den, og kjør df -h igjen. Appen lagrer igjen, og referansefilene i
+  /srv/data/reference er urørt.
+
+  Å tømme hele volumet ville også frigjort plass, men da forsvinner data
+  appen trenger. Finn årsaken først, og fjern bare den.
+feedback:
+  data_missing: "Referansefiler som appen trenger, mangler eller er endret."
+  still_full: "Datavolumet har fortsatt for lite ledig plass."
+  app_cannot_save: "Maleapp får fortsatt ikke lagret en avlesning."
