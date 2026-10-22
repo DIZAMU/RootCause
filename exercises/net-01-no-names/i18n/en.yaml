@@ -1,0 +1,37 @@
+ticket:
+  title: "The server cannot find our internal machines"
+  from: "Lars Moen, IT operations"
+  body: |
+    Hi. Since this morning the app server cannot reach fil01, print01 or
+    intranett. Everything fails with "could not resolve host" or "unknown
+    host", but connecting by IP address still works. The names live in our
+    own zone {zone}, served by a small DNS server on the machine itself.
+    Can you sort it out?
+hints:
+  - "Follow a name lookup step by step: which sources does the system ask, which DNS server does it use, and does that server answer?"
+  - "getent hosts fil01.{zone} looks a name up the way programs do. dig @127.0.0.1 fil01.{zone} asks the DNS server directly. Also read /etc/nsswitch.conf and /etc/resolv.conf."
+  - "The fault is in {fault_file}. nsswitch.conf must list dns for hosts, and dnsmasq must listen on the address resolv.conf names."
+walkthrough: |
+  A name lookup on Linux goes through a chain. /etc/nsswitch.conf decides
+  which sources to ask for host names: "files" is /etc/hosts, "dns" is the
+  DNS servers in /etc/resolv.conf. Here resolv.conf points at 127.0.0.1,
+  where dnsmasq serves the zone {zone}.
+
+  Test each link. getent hosts fil01.{zone} follows the whole chain and
+  fails. dig @127.0.0.1 fil01.{zone} asks the DNS server directly. If dig
+  answers but getent does not, the chain is broken before DNS. If dig gets no
+  answer, the server itself is the problem.
+
+  This time the fault was in {fault_file}. Either "hosts:" in nsswitch.conf
+  had lost "dns", so DNS was never asked, or dnsmasq listened on 127.0.0.2
+  while resolv.conf pointed at 127.0.0.1. Put "dns" back after "files", or
+  set listen-address=127.0.0.1 in /etc/dnsmasq.d/office.conf and restart
+  dnsmasq (pkill dnsmasq, then dnsmasq).
+
+  Writing the names into /etc/hosts would hide the problem on this one
+  machine, but every new name would then need a manual edit, and the real
+  fault would still be there.
+feedback:
+  hosts_file_used: "Names from {zone} were added to /etc/hosts. That hides the problem instead of fixing name resolution."
+  names_unresolved: "Internal names in {zone} still do not resolve."
+  wrong_address: "An internal name in {zone} resolves, but to the wrong address."

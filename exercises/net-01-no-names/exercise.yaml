@@ -1,0 +1,18 @@
+id: net-01-no-names
+version: 1
+topic: networking
+difficulty: 2
+estimated_minutes: 15
+network: none
+resources:
+  memory: 128Mi
+  cpus: 0.5
+session_ttl_minutes: 60
+check:
+  runs_from: sandbox
+  before: none
+# dnsmasq binds port 53 and then drops privileges to its own user. KILL lets
+# root stop it again, since it no longer runs as root.
+capabilities: [NET_BIND_SERVICE, SETUID, SETGID, KILL]
+variants:
+  zone: [office.lan, kontor.lan, firma.lan]

@@ -1,0 +1,37 @@
+ticket:
+  title: "Serveren finner ikke de interne maskinene våre"
+  from: "Lars Moen, IT-drift"
+  body: |
+    Hei. Siden i morges får ikke appserveren kontakt med fil01, print01 eller
+    intranett. Alt feiler med "could not resolve host" eller "unknown host",
+    men det virker fortsatt å koble til med IP-adresse. Navnene ligger i vår
+    egen sone {zone}, som en liten DNS-server på selve maskinen svarer for.
+    Kan du ordne det?
+hints:
+  - "Følg et navneoppslag steg for steg: hvilke kilder spør systemet, hvilken DNS-server bruker det, og svarer den serveren?"
+  - "getent hosts fil01.{zone} slår opp et navn slik programmer gjør. dig @127.0.0.1 fil01.{zone} spør DNS-serveren direkte. Les også /etc/nsswitch.conf og /etc/resolv.conf."
+  - "Feilen ligger i {fault_file}. nsswitch.conf må ha med dns for hosts, og dnsmasq må lytte på adressen som resolv.conf oppgir."
+walkthrough: |
+  Et navneoppslag i Linux går gjennom en kjede. /etc/nsswitch.conf avgjør
+  hvilke kilder som spørres om vertsnavn: "files" er /etc/hosts, "dns" er
+  DNS-serverne i /etc/resolv.conf. Her peker resolv.conf på 127.0.0.1, der
+  dnsmasq svarer for sonen {zone}.
+
+  Test hvert ledd. getent hosts fil01.{zone} følger hele kjeden og feiler.
+  dig @127.0.0.1 fil01.{zone} spør DNS-serveren direkte. Svarer dig, men
+  ikke getent, er kjeden brutt før DNS. Får dig ikke svar, er det serveren
+  selv som er problemet.
+
+  Denne gangen lå feilen i {fault_file}. Enten manglet "dns" i "hosts:" i
+  nsswitch.conf, så DNS ble aldri spurt, eller så lyttet dnsmasq på
+  127.0.0.2 mens resolv.conf pekte på 127.0.0.1. Legg "dns" tilbake etter
+  "files", eller sett listen-address=127.0.0.1 i /etc/dnsmasq.d/office.conf
+  og start dnsmasq på nytt (pkill dnsmasq, deretter dnsmasq).
+
+  Å skrive navnene inn i /etc/hosts ville skjult problemet på akkurat denne
+  maskinen, men da må hvert nytt navn legges inn for hånd, og selve feilen
+  er der fortsatt.
+feedback:
+  hosts_file_used: "Navn fra {zone} er lagt inn i /etc/hosts. Det skjuler problemet i stedet for å rette navneoppslaget."
+  names_unresolved: "Interne navn i {zone} blir fortsatt ikke slått opp."
+  wrong_address: "Et internt navn i {zone} blir slått opp, men til feil adresse."
