@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"go.yaml.in/yaml/v3"
@@ -31,6 +33,8 @@ var (
 	validNetwork  = map[string]bool{"none": true, "internal": true}
 	validRunsFrom = map[string]bool{"sandbox": true, "runner": true}
 	validBefore   = map[string]bool{"none": true, "restart": true}
+	validInit     = map[string]bool{"": true, "none": true, "systemd": true}
+	tmpfsSize     = regexp.MustCompile(`^([0-9]+)Mi$`)
 	idPattern     = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 	memoryPattern = regexp.MustCompile(`^[0-9]+(Mi|Gi)$`)
 
@@ -118,9 +122,19 @@ func (e *Exercise) validateSchema() error {
 	if !validRunsFrom[e.Check.RunsFrom] {
 		add("check.runs_from %q must be sandbox or runner", e.Check.RunsFrom)
 	}
+	if e.Check.RunsFrom == "runner" && e.Network != "internal" {
+		add("check.runs_from runner needs network internal, so the runner can reach the sandbox")
+	}
 	if !validBefore[e.Check.Before] {
 		add("check.before %q must be none or restart", e.Check.Before)
 	}
+	if !validInit[e.Init] {
+		add("init %q must be none or systemd", e.Init)
+	}
+	if e.Init == "systemd" && e.Check.RunsFrom == "runner" {
+		add("check.runs_from runner is not supported with init systemd")
+	}
+	p = append(p, e.validateTmpfs()...)
 	for name, values := range e.Variants {
 		if len(values) == 0 {
 			add("variant %q has no values", name)
@@ -132,6 +146,44 @@ func (e *Exercise) validateSchema() error {
 		}
 	}
 	return errors.Join(p...)
+}
+
+// validateTmpfs checks each tmpfs volume: an absolute path other than "/", a
+// size in Mi, and a total size below resources.memory, since tmpfs pages are
+// charged to the sandbox's memory limit.
+func (e *Exercise) validateTmpfs() []error {
+	var p []error
+	total := 0
+	for _, t := range e.Tmpfs {
+		if !path.IsAbs(t.Path) || path.Clean(t.Path) == "/" {
+			p = append(p, fmt.Errorf("tmpfs path %q must be absolute and not /", t.Path))
+		}
+		m := tmpfsSize.FindStringSubmatch(t.Size)
+		if m == nil {
+			p = append(p, fmt.Errorf("tmpfs size %q must look like 32Mi", t.Size))
+			continue
+		}
+		n, _ := strconv.Atoi(m[1])
+		total += n
+	}
+	if len(e.Tmpfs) > 0 {
+		if mem, ok := memoryMi(e.Resources.Memory); ok && total >= mem {
+			p = append(p, fmt.Errorf("tmpfs total %dMi must be below resources.memory %s", total, e.Resources.Memory))
+		}
+	}
+	return p
+}
+
+// memoryMi converts a resources.memory value ("256Mi", "1Gi") to Mi.
+func memoryMi(mem string) (int, bool) {
+	if !memoryPattern.MatchString(mem) {
+		return 0, false
+	}
+	n, _ := strconv.Atoi(mem[:len(mem)-2])
+	if strings.HasSuffix(mem, "Gi") {
+		n *= 1024
+	}
+	return n, true
 }
 
 // validateFiles checks that every required file exists in the folder.
