@@ -1,0 +1,20 @@
+id: svc-02-dies-on-reboot
+version: 1
+topic: services
+difficulty: 2
+estimated_minutes: 10
+network: none
+init: systemd
+resources:
+  memory: 256Mi
+  cpus: 0.5
+session_ttl_minutes: 60
+# The check reboots the sandbox first, so a service started by hand is gone.
+check:
+  runs_from: sandbox
+  before: restart
+# systemd starts the app as its own user (SETUID, SETGID) and stops units
+# (KILL). CHOWN, DAC_OVERRIDE and FOWNER let root manage files it does not own.
+capabilities: [SETUID, SETGID, KILL, CHOWN, DAC_OVERRIDE, FOWNER]
+variants:
+  port: [8000, 8080, 9090]

@@ -1,0 +1,32 @@
+ticket:
+  title: "Vaktliste er borte etter hver omstart"
+  from: "Anne Strand, Resepsjonen"
+  body: |
+    Hei. Vaktliste, vaktlista vår, virker fint om dagen. Men serveren ble
+    oppdatert og startet på nytt i natt, og i morges var den nede igjen.
+    Noen startet den for hånd, som sist. Kan du få den til å komme tilbake
+    av seg selv etter en omstart? Den kjører på port {port}.
+hints:
+  - "Å kjøre nå og å starte ved oppstart er to forskjellige ting. Se hvordan tjenestestyreren behandler denne tjenesten ved oppstart."
+  - "systemctl status {unit} viser både om den er aktiv og om den er aktivert. systemctl is-enabled svarer på det siste."
+  - "{unit} er ikke aktivert (enabled), så systemd starter den ikke ved oppstart. Aktiver den."
+walkthrough: |
+  systemd holder styr på to separate ting for en tjeneste. Aktiv (active)
+  betyr at den kjører akkurat nå. Aktivert (enabled) betyr at den er koblet
+  til et oppstartsmål, så systemd starter den ved hver oppstart. systemctl
+  start gjør den bare aktiv, og det forsvinner ved neste omstart.
+
+  systemctl status {unit} viser "active (running)", men også "disabled" på
+  Loaded-linjen. Det er hele problemet.
+
+  Kjør systemctl enable {unit}. Det lager en lenke i
+  /etc/systemd/system/multi-user.target.wants/, så tjenesten starter når
+  serveren når vanlig driftstilstand. systemctl enable --now {unit}
+  aktiverer og starter den i ett steg.
+
+  Å starte den for hånd igjen løser i dag, men ikke i morgen. Testen
+  starter serveren på nytt først, så bare en aktivert tjeneste består.
+feedback:
+  not_running_after_reboot: "Etter en omstart kjører ikke vaktliste."
+  wrong_program: "Etter en omstart kjører vaktliste-tjenesten noe annet enn vaktliste-appen."
+  health_failed: "Etter en omstart svarer ikke vaktliste riktig på port {port}."

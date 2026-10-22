@@ -1,0 +1,13 @@
+[Unit]
+Description=vaktliste duty roster service
+After=network.target
+
+[Service]
+Type=simple
+User=vaktliste
+EnvironmentFile=/etc/vaktliste/vaktliste.env
+ExecStart=/usr/bin/python3 /opt/vaktliste/app.py
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
