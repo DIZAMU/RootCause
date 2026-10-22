@@ -1,0 +1,41 @@
+ticket:
+  title: "Nattbackupen feiler"
+  from: "Ola Hansen, Drift"
+  body: |
+    Hei. Nattbackupen av {dataset} feilet i natt med "permission denied".
+    Den har gått fint hver natt før det. Jobben kjører som brukeren backup og
+    skriver til /srv/backup. Loggen er /var/log/nightly-backup.log. Kan du få
+    den til å virke igjen?
+hints:
+  - "Les loggen, og kjør backupen selv slik nattjobben gjør: som brukeren backup."
+  - "runuser -u backup -- /usr/local/bin/nightly-backup.sh gjenskaper feilen. ls -l og ls -ld viser hvem som får gjøre hva."
+  - "Rettighetsproblemet er på {blocked}. Brukeren backup må kunne kjøre skriptet og skrive til /srv/backup."
+walkthrough: |
+  Loggen slutter med en linje om "Permission denied". Kjør jobben selv som
+  brukeren den faktisk kjører som:
+    runuser -u backup -- /usr/local/bin/nightly-backup.sh
+  Kjører du den som root, skjules problemet, fordi root får gjøre nesten alt.
+
+  Feilen pekte på {blocked}. To ting må stemme for denne jobben: skriptet
+  trenger kjørebiten (x) for i det hele tatt å kunne kjøres, og brukeren
+  backup trenger skrivetilgang til /srv/backup for å lage arkivet. Sjekk dem
+  med ls -l /usr/local/bin/nightly-backup.sh og ls -ld /srv/backup.
+
+  Rett bare det som er feil:
+    chmod 755 /usr/local/bin/nightly-backup.sh
+    chown backup:backup /srv/backup
+  Kjør deretter jobben som backup igjen, og se etter det nye arkivet i
+  /srv/backup.
+
+  chmod 777 ville også fått den til å kjøre, men da kan hvilken som helst
+  bruker endre hva backupskriptet gjør eller tukle med arkivene. Å kjøre
+  jobben som root er heller ingen løsning: jobben skal bare ha den tilgangen
+  den trenger.
+feedback:
+  backup_user_changed: "Brukeren backup er ikke lenger den vanlige backupbrukeren."
+  script_missing: "Backupskriptet mangler."
+  script_changed: "Backupskriptet tar ikke lenger backup av {dataset} til /srv/backup."
+  too_open: "Backupskriptet eller /srv/backup kan nå endres av alle brukere."
+  backup_fails: "Backupen feiler fortsatt når den kjører som brukeren backup."
+  no_archive: "Backupen kjørte, men det kom ikke noe nytt arkiv eid av backup i /srv/backup."
+  archive_incomplete: "Det nye arkivet inneholder ikke dataene for {dataset}."
