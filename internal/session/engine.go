@@ -118,7 +118,7 @@ func (e *Engine) Start(ctx context.Context, learnerID int, exerciseID string, se
 		}
 	}()
 
-	sb, err := e.rt.Create(ctx, e.specFor(ex, sessionID))
+	sb, err := e.createSandbox(ctx, ex, e.specFor(ex, sessionID))
 	if err != nil {
 		return store.Session{}, fmt.Errorf("create sandbox: %w", err)
 	}
@@ -152,6 +152,7 @@ const (
 	labelSession  = "rootcause.session"  // the session id
 	labelDatabase = "rootcause.database" // the database that owns the session
 	labelSelftest = "rootcause.selftest" // "true" on selftest sandboxes
+	labelRunner   = "rootcause.runner"   // "true" on check runner containers
 )
 
 // specFor builds the sandbox spec for an exercise session.
@@ -159,6 +160,10 @@ func (e *Engine) specFor(ex *exercise.Exercise, sessionID string) runtime.Sandbo
 	labels := map[string]string{labelSession: sessionID}
 	if e.st != nil {
 		labels[labelDatabase] = e.st.Database()
+	}
+	var tmpfs []runtime.Tmpfs
+	for _, t := range ex.Tmpfs {
+		tmpfs = append(tmpfs, runtime.Tmpfs{Path: t.Path, Size: t.Size})
 	}
 	return runtime.SandboxSpec{
 		Name:    "rootcause-" + sessionID,
@@ -168,7 +173,24 @@ func (e *Engine) specFor(ex *exercise.Exercise, sessionID string) runtime.Sandbo
 		Network: ex.Network,
 		Caps:    ex.Capabilities,
 		Labels:  labels,
+		Init:    ex.Init,
+		Tmpfs:   tmpfs,
 	}
+}
+
+// createSandbox creates a sandbox and waits until it is ready for setup.sh,
+// so no script runs while the machine is still booting. On a readiness
+// failure it destroys the sandbox and returns the error.
+func (e *Engine) createSandbox(ctx context.Context, ex *exercise.Exercise, spec runtime.SandboxSpec) (runtime.Sandbox, error) {
+	sb, err := e.rt.Create(ctx, spec)
+	if err != nil {
+		return runtime.Sandbox{}, err
+	}
+	if err := e.waitReady(ctx, ex, sb.ID, true); err != nil {
+		_ = e.rt.Destroy(context.Background(), sb.ID)
+		return runtime.Sandbox{}, err
+	}
+	return sb, nil
 }
 
 // prepare turns a fresh sandbox into the broken machine: it runs setup.sh (if
@@ -196,8 +218,8 @@ func (e *Engine) prepare(ctx context.Context, sandboxID string, ex *exercise.Exe
 	return lastJSONObject(res.Stdout), nil
 }
 
-// Check grades the active session. It optionally restarts first (check.before),
-// runs check.sh, logs check_run, and on a pass marks the session solved and
+// Check grades the active session through runCheck (restart and runner
+// handling), logs check_run, and on a pass marks the session solved and
 // destroys the sandbox. Stars/levels are applied in a later step.
 func (e *Engine) Check(ctx context.Context, sessionID string) (CheckResult, error) {
 	sess, err := e.st.SessionByID(ctx, sessionID)
@@ -208,14 +230,8 @@ func (e *Engine) Check(ctx context.Context, sessionID string) (CheckResult, erro
 	if err != nil {
 		return CheckResult{}, err
 	}
-	if ex.Check.Before == "restart" {
-		if err := e.rt.Restart(ctx, sess.SandboxID); err != nil {
-			return CheckResult{}, err
-		}
-		time.Sleep(time.Second)
-	}
-
-	res, err := e.execScript(ctx, sess.SandboxID, ex.Dir(), "check.sh", scriptEnv(sess.Seed, sess.VariantValues))
+	spec := e.specFor(ex, sessionID)
+	res, err := e.runCheck(ctx, ex, spec, sess.SandboxID, scriptEnv(sess.Seed, sess.VariantValues))
 	if err != nil {
 		return CheckResult{}, fmt.Errorf("run check: %w", err)
 	}
@@ -259,6 +275,119 @@ func (e *Engine) Check(ctx context.Context, sessionID string) (CheckResult, erro
 		result.Level = lc
 	}
 	return result, nil
+}
+
+// readyTimeout bounds how long a restarted sandbox may take to accept commands.
+const readyTimeout = 30 * time.Second
+
+// runCheck runs check.sh the way the exercise asks (spec section 4.2): it
+// restarts the sandbox first if check.before is "restart", then runs the
+// check inside the sandbox, or, for runs_from "runner", inside a separate
+// runner container on the internal network that reaches the sandbox by name
+// through RC_SANDBOX_HOST. spec is the spec the sandbox was created from.
+// Check and the selftest both grade through here.
+func (e *Engine) runCheck(ctx context.Context, ex *exercise.Exercise, spec runtime.SandboxSpec, sandboxID string, env map[string]string) (runtime.ExecResult, error) {
+	if ex.Check.Before == "restart" {
+		if err := e.rt.Restart(ctx, sandboxID); err != nil {
+			return runtime.ExecResult{}, err
+		}
+		if err := e.waitReady(ctx, ex, sandboxID, false); err != nil {
+			return runtime.ExecResult{}, err
+		}
+	}
+	if ex.Check.RunsFrom != "runner" {
+		return e.execScript(ctx, sandboxID, ex.Dir(), "check.sh", env)
+	}
+
+	rs := runnerSpec(spec)
+	_ = e.rt.Destroy(ctx, rs.Name) // a runner left by an interrupted check
+	runner, err := e.rt.Create(ctx, rs)
+	if err != nil {
+		return runtime.ExecResult{}, fmt.Errorf("create runner: %w", err)
+	}
+	defer func() { _ = e.rt.Destroy(context.Background(), runner.ID) }()
+
+	runnerEnv := make(map[string]string, len(env)+1)
+	for k, v := range env {
+		runnerEnv[k] = v
+	}
+	runnerEnv["RC_SANDBOX_HOST"] = spec.Name
+	return e.execScript(ctx, runner.ID, ex.Dir(), "check.sh", runnerEnv)
+}
+
+// runnerSpec derives the runner container's spec from the sandbox's: the same
+// image and locked-down limits, no added capabilities, the internal network
+// (the loader requires it for runner checks), and a label marking it as a
+// runner. It keeps the sandbox's labels, so the reaper treats an orphaned
+// runner like its sandbox.
+func runnerSpec(sandbox runtime.SandboxSpec) runtime.SandboxSpec {
+	labels := make(map[string]string, len(sandbox.Labels)+1)
+	for k, v := range sandbox.Labels {
+		labels[k] = v
+	}
+	labels[labelRunner] = "true"
+	return runtime.SandboxSpec{
+		Name:    sandbox.Name + "-runner",
+		Image:   sandbox.Image,
+		Memory:  sandbox.Memory,
+		CPUs:    sandbox.CPUs,
+		Network: "internal",
+		Labels:  labels,
+	}
+}
+
+// waitReady blocks until a new or restarted sandbox is ready, or readyTimeout
+// passes. A plain sandbox is ready once it accepts a command. A systemd
+// sandbox is ready once boot has finished; see waitBooted for strict.
+func (e *Engine) waitReady(ctx context.Context, ex *exercise.Exercise, sandboxID string, strict bool) error {
+	ctx, cancel := context.WithTimeout(ctx, readyTimeout)
+	defer cancel()
+	if ex.Init == "systemd" {
+		return e.waitBooted(ctx, sandboxID, strict)
+	}
+	for {
+		res, err := e.rt.Exec(ctx, sandboxID, []string{"true"}, nil)
+		if err == nil && res.ExitCode == 0 {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("sandbox not ready within %s", readyTimeout)
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+}
+
+// waitBooted waits for systemd to finish booting. `systemctl
+// is-system-running --wait` blocks until boot is over and prints the state.
+// Until systemd's bus is up the command itself fails, so it is retried until
+// ctx ends.
+//
+// With strict, used for a freshly created sandbox, only "running" is ready:
+// "degraded" is an error naming the failed units, so a unit that is broken
+// before the learner has touched anything is never accepted silently.
+// Without strict, used after the check's restart, "degraded" also counts as
+// booted: the learner may have broken a unit, and check.sh grades that.
+func (e *Engine) waitBooted(ctx context.Context, sandboxID string, strict bool) error {
+	var state string
+	for {
+		res, err := e.rt.Exec(ctx, sandboxID, []string{"systemctl", "is-system-running", "--wait"}, nil)
+		state = strings.TrimSpace(string(res.Stdout))
+		switch {
+		case err == nil && state == "running":
+			return nil
+		case err == nil && state == "degraded" && !strict:
+			return nil
+		case err == nil && state == "degraded":
+			failed, _ := e.rt.Exec(ctx, sandboxID, []string{"systemctl", "--failed", "--no-legend", "--plain"}, nil)
+			return fmt.Errorf("sandbox booted degraded, failed units: %s", strings.TrimSpace(string(failed.Stdout)))
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("sandbox not booted within %s (last state %q)", readyTimeout, state)
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
 }
 
 // applyLevel recomputes the topic level from all its finished outcomes and, if
@@ -361,7 +490,7 @@ func (e *Engine) Reset(ctx context.Context, sessionID string) error {
 		_ = e.st.EndSession(bg, sessionID, "voided", nil)
 		return err
 	}
-	sb, err := e.rt.Create(ctx, e.specFor(ex, sessionID))
+	sb, err := e.createSandbox(ctx, ex, e.specFor(ex, sessionID))
 	if err != nil {
 		return void("", fmt.Errorf("recreate sandbox: %w", err))
 	}

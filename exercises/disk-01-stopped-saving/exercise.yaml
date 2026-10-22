@@ -1,0 +1,23 @@
+id: disk-01-stopped-saving
+version: 1
+topic: disk
+difficulty: 1
+estimated_minutes: 10
+network: none
+resources:
+  memory: 128Mi
+  cpus: 0.5
+session_ttl_minutes: 60
+check:
+  runs_from: sandbox
+  before: none
+# The data volume: small, so it can be filled quickly. It counts toward the
+# memory limit.
+tmpfs:
+  - path: /srv/data
+    size: 32Mi
+# CHOWN, DAC_OVERRIDE and FOWNER let root manage the app's files. SETUID and
+# SETGID let the check save a reading as the app's user.
+capabilities: [CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID]
+variants:
+  junk_dir: [.trash, readings/.old, .cache/export]

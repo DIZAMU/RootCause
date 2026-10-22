@@ -19,6 +19,14 @@ type Exercise struct {
 	SessionTTLMin    int       `yaml:"session_ttl_minutes"`
 	Check            Check     `yaml:"check"`
 
+	// Init is the sandbox's PID 1: "none" (the default; a plain entrypoint
+	// under docker's init) or "systemd" (the image boots systemd).
+	Init string `yaml:"init"`
+
+	// Tmpfs lists size-limited in-memory volumes mounted into the sandbox.
+	// Their total size counts toward resources.memory.
+	Tmpfs []Tmpfs `yaml:"tmpfs"`
+
 	// Capabilities are the Linux capabilities the sandbox adds back after
 	// dropping all of them (spec section 13.1). Empty means none are needed.
 	Capabilities []string `yaml:"capabilities"`
@@ -36,6 +44,12 @@ type Exercise struct {
 type Resources struct {
 	Memory string  `yaml:"memory"`
 	CPUs   float64 `yaml:"cpus"`
+}
+
+// Tmpfs is one size-limited in-memory volume.
+type Tmpfs struct {
+	Path string `yaml:"path"` // absolute mount point, not "/"
+	Size string `yaml:"size"` // e.g. "32Mi"
 }
 
 // Check controls how and when the grader runs (spec section 4.2).

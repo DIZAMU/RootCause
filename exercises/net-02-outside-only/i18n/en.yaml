@@ -1,0 +1,31 @@
+ticket:
+  title: "{site} works on the server, but not for us"
+  from: "Ingrid Berg, Customer service"
+  body: |
+    Hi. Since yesterday's maintenance nobody in the office can open {site}.
+    The browser just says it cannot connect. Our supplier logged in to the
+    server and says the site works fine there, on port {port}. So what is
+    wrong?
+hints:
+  - "A service can work on the server itself and still be closed to everyone else. Look at which address it listens on."
+  - "ss -tlnp lists listening TCP sockets with their address and program. Compare 127.0.0.1 with 0.0.0.0."
+  - "In {conf} the listen directive is bound to 127.0.0.1. Make nginx listen on all addresses for port {port}, then restart it."
+walkthrough: |
+  Every listening service is bound to an address. 127.0.0.1 is the loopback
+  address: only programs on the same machine can reach it. 0.0.0.0 means
+  every address the machine has, so other machines can connect too.
+
+  curl http://localhost:{port}/ on the server works, which is why the
+  supplier thought all was fine. ss -tlnp shows nginx listening on
+  127.0.0.1:{port} only.
+
+  In {conf} the line listen 127.0.0.1:{port}; limits nginx to loopback.
+  Change it to listen {port}; (all addresses), run nginx -t, then restart
+  nginx so it binds again. ss -tlnp now shows 0.0.0.0:{port}, and other
+  machines reach the site.
+
+  Always test from where the users are. A check from the server itself only
+  proves the service runs, not that anyone can reach it.
+feedback:
+  unreachable_from_outside: "{site} still cannot be reached from another machine on port {port}."
+  wrong_content: "Something answers on port {port}, but it is not the {site} page."

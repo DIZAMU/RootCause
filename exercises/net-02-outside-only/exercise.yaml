@@ -1,0 +1,20 @@
+id: net-02-outside-only
+version: 1
+topic: networking
+difficulty: 1
+estimated_minutes: 10
+network: internal
+resources:
+  memory: 256Mi
+  cpus: 0.5
+session_ttl_minutes: 60
+# The check must come from another machine: inside the sandbox the site works
+# on localhost even while it is broken.
+check:
+  runs_from: runner
+  before: none
+# nginx drops privileges to the "nginx" user for its workers.
+capabilities: [SETUID, SETGID, CHOWN]
+variants:
+  site: [kundeportal, timeliste, bestilling]
+  port: [8080, 8090, 9000]

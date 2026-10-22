@@ -1,8 +1,8 @@
 // Package docker implements runtime.Runtime by shelling out to the docker CLI.
 // Every sandbox is created locked down (spec section 13.1): all Linux
 // capabilities dropped, memory/CPU/process limits, no privileged mode, no
-// Docker socket, an init process as PID 1, and network "none" or an
-// internal-only network.
+// Docker socket, an init process as PID 1 (docker's, or systemd for
+// exercises that boot it), and network "none" or an internal-only network.
 package docker
 
 import (
@@ -60,12 +60,21 @@ func (r *Runtime) Create(ctx context.Context, spec runtime.SandboxSpec) (runtime
 	args := []string{
 		"run", "-d",
 		"--name", spec.Name,
-		"--init", // a real PID 1 that reaps stopped processes (no zombies)
 		"--cap-drop", "ALL",
 		"--security-opt", "no-new-privileges",
 		"--pids-limit", fmt.Sprintf("%d", pids),
 		"--network", networkArg(spec.Network),
 		"--label", labelSandbox + "=true",
+	}
+	if spec.Init == "systemd" {
+		// systemd must be PID 1 and reaps stopped processes itself. It needs
+		// writable in-memory /run and /run/lock.
+		args = append(args, "--tmpfs", "/run", "--tmpfs", "/run/lock")
+	} else {
+		args = append(args, "--init") // a real PID 1 that reaps stopped processes (no zombies)
+	}
+	for _, t := range spec.Tmpfs {
+		args = append(args, "--tmpfs", t.Path+":size="+dockerMemory(t.Size))
 	}
 	for _, c := range spec.Caps {
 		args = append(args, "--cap-add", c)

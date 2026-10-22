@@ -46,6 +46,17 @@ func TestValidateSchemaRejectsBadFields(t *testing.T) {
 		{"bad network", "network", func(e *Exercise) { e.Network = "host" }},
 		{"bad memory", "memory", func(e *Exercise) { e.Resources.Memory = "256" }},
 		{"bad runs_from", "runs_from", func(e *Exercise) { e.Check.RunsFrom = "nowhere" }},
+		{"runner without internal network", "needs network internal", func(e *Exercise) { e.Check.RunsFrom = "runner" }},
+		{"runner with systemd", "not supported", func(e *Exercise) {
+			e.Init, e.Network, e.Check.RunsFrom = "systemd", "internal", "runner"
+		}},
+		{"bad init", "init", func(e *Exercise) { e.Init = "openrc" }},
+		{"relative tmpfs", "absolute", func(e *Exercise) { e.Tmpfs = []Tmpfs{{Path: "srv/data", Size: "32Mi"}} }},
+		{"root tmpfs", "absolute", func(e *Exercise) { e.Tmpfs = []Tmpfs{{Path: "/", Size: "32Mi"}} }},
+		{"tmpfs size unit", "32Mi", func(e *Exercise) { e.Tmpfs = []Tmpfs{{Path: "/srv/data", Size: "32m"}} }},
+		{"tmpfs over memory", "below resources.memory", func(e *Exercise) {
+			e.Tmpfs = []Tmpfs{{Path: "/a", Size: "200Mi"}, {Path: "/b", Size: "56Mi"}}
+		}},
 		{"bad id", "id", func(e *Exercise) { e.ID = "Bad_ID" }},
 		{"empty variant", "no values", func(e *Exercise) { e.Variants = map[string]StringList{"x": {}} }},
 		{"disallowed capability", "not allowed", func(e *Exercise) { e.Capabilities = []string{"SYS_ADMIN"} }},

@@ -1,0 +1,21 @@
+id: perm-01-shared-folder
+version: 1
+topic: permissions
+difficulty: 1
+estimated_minutes: 10
+network: none
+resources:
+  memory: 128Mi
+  cpus: 0.5
+session_ttl_minutes: 60
+check:
+  runs_from: sandbox
+  before: none
+# What a real root needs to repair a share: DAC_OVERRIDE and FOWNER to change
+# files it does not own, CHOWN to change the group owner, FSETID to keep the
+# setgid bit. SETUID and SETGID let the check act as a department user.
+capabilities: [CHOWN, DAC_OVERRIDE, FOWNER, FSETID, SETUID, SETGID]
+variants:
+  dept: [okonomi, salg, hr]
+  member: [kari, ola, ingrid]
+  colleague: [anne, jonas, sofie]

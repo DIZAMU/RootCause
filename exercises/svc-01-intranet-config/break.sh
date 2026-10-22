@@ -29,7 +29,14 @@ sed -i "${target}s/;[[:space:]]*$//" "$conf"
 # Take the site down the way a bad config change would: stop nginx, then try to
 # start it again. The start fails on the broken config, so nothing serves.
 pkill -x nginx 2>/dev/null || true
-sleep 0.3
+for _ in $(seq 50); do
+    pgrep -x nginx >/dev/null || break
+    sleep 0.1
+done
+if pgrep -x nginx >/dev/null; then
+    echo '{"error": "nginx did not stop"}' >&2
+    exit 2
+fi
 nginx 2>/dev/null || true
 
 # Report the line that is actually broken. nginx reports a later line (where it

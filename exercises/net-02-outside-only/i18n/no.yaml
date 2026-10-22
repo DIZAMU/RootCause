@@ -1,0 +1,31 @@
+ticket:
+  title: "{site} virker på serveren, men ikke for oss"
+  from: "Ingrid Berg, Kundeservice"
+  body: |
+    Hei. Siden vedlikeholdet i går får ingen på kontoret åpnet {site}.
+    Nettleseren sier bare at den ikke får kontakt. Leverandøren vår logget
+    inn på serveren og sier at siden virker fint der, på port {port}. Hva er
+    galt?
+hints:
+  - "En tjeneste kan virke på selve serveren og likevel være stengt for alle andre. Se hvilken adresse den lytter på."
+  - "ss -tlnp viser TCP-sockets som lytter, med adresse og program. Sammenlign 127.0.0.1 med 0.0.0.0."
+  - "I {conf} er listen-direktivet bundet til 127.0.0.1. Få nginx til å lytte på alle adresser for port {port}, og start den på nytt."
+walkthrough: |
+  Hver tjeneste som lytter, er bundet til en adresse. 127.0.0.1 er
+  loopback-adressen: bare programmer på samme maskin når den. 0.0.0.0 betyr
+  alle adressene maskinen har, så andre maskiner kan også koble til.
+
+  curl http://localhost:{port}/ på serveren virker, og derfor trodde
+  leverandøren at alt var i orden. ss -tlnp viser at nginx bare lytter på
+  127.0.0.1:{port}.
+
+  I {conf} begrenser linjen listen 127.0.0.1:{port}; nginx til loopback.
+  Endre den til listen {port}; (alle adresser), kjør nginx -t, og start nginx
+  på nytt så den binder seg på nytt. ss -tlnp viser nå 0.0.0.0:{port}, og
+  andre maskiner når siden.
+
+  Test alltid fra der brukerne er. En test fra selve serveren viser bare at
+  tjenesten kjører, ikke at noen når den.
+feedback:
+  unreachable_from_outside: "{site} kan fortsatt ikke nås fra en annen maskin på port {port}."
+  wrong_content: "Noe svarer på port {port}, men det er ikke {site}-siden."

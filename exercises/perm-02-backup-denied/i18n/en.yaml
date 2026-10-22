@@ -1,0 +1,40 @@
+ticket:
+  title: "The nightly backup fails"
+  from: "Ola Hansen, Operations"
+  body: |
+    Hi. The nightly backup of {dataset} failed last night with
+    "permission denied". It ran fine every night before that. The job runs as
+    the backup user and writes to /srv/backup. Its log is
+    /var/log/nightly-backup.log. Can you get it working again?
+hints:
+  - "Read the log, then run the backup yourself the way the night job does: as the backup user."
+  - "runuser -u backup -- /usr/local/bin/nightly-backup.sh reproduces the error. ls -l and ls -ld show who may do what."
+  - "The permission problem is on {blocked}. The backup user must be able to run the script and write to /srv/backup."
+walkthrough: |
+  The log ends with a "Permission denied" line. Run the job yourself as the
+  user it really runs as:
+    runuser -u backup -- /usr/local/bin/nightly-backup.sh
+  Running it as root hides the problem, because root may do almost anything.
+
+  The error pointed at {blocked}. Two things must hold for this job:
+  the script needs the execute bit (x) so it can be run at all, and the
+  backup user needs write access to /srv/backup to create the archive.
+  Check them with ls -l /usr/local/bin/nightly-backup.sh and ls -ld /srv/backup.
+
+  Fix only what is wrong:
+    chmod 755 /usr/local/bin/nightly-backup.sh
+    chown backup:backup /srv/backup
+  Then run the job as backup again and look for the new archive in
+  /srv/backup.
+
+  chmod 777 would also make it run, but then any user can change what the
+  backup script does or tamper with the archives. Running the job as root is
+  no fix either: the job should have only the access it needs.
+feedback:
+  backup_user_changed: "The backup user is not the normal backup user any more."
+  script_missing: "The backup script is missing."
+  script_changed: "The backup script no longer backs up {dataset} to /srv/backup."
+  too_open: "The backup script or /srv/backup can now be changed by any user."
+  backup_fails: "The backup still fails when it runs as the backup user."
+  no_archive: "The backup ran, but no new archive owned by the backup user appeared in /srv/backup."
+  archive_incomplete: "The new archive does not contain the {dataset} data."

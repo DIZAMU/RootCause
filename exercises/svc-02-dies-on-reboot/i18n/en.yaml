@@ -1,0 +1,32 @@
+ticket:
+  title: "Vaktliste is gone after every reboot"
+  from: "Anne Strand, Reception"
+  body: |
+    Hi. Vaktliste, our duty roster, works fine during the day. But the
+    server was patched and rebooted last night, and this morning it was
+    down again. Someone restarted it by hand, like last time. Can you make
+    it come back on its own after a reboot? It runs on port {port}.
+hints:
+  - "Running now and starting at boot are two different things. Look at how the service manager treats this service at boot."
+  - "systemctl status {unit} shows both whether it is active and whether it is enabled. systemctl is-enabled answers the second question."
+  - "{unit} is not enabled, so systemd does not start it at boot. Enable it."
+walkthrough: |
+  systemd keeps two separate facts about a service. Active means it runs
+  right now. Enabled means it is linked into a boot target, so systemd
+  starts it at every boot. systemctl start only makes it active, and that
+  is lost at the next reboot.
+
+  systemctl status {unit} shows "active (running)" but also "disabled" on
+  the Loaded line. That is the whole problem.
+
+  Run systemctl enable {unit}. It creates a link in
+  /etc/systemd/system/multi-user.target.wants/, so the unit starts when the
+  server reaches its normal running state. systemctl enable --now {unit}
+  enables and starts it in one step.
+
+  Starting it by hand again fixes today but not tomorrow. The check reboots
+  the server first, so only an enabled service passes.
+feedback:
+  not_running_after_reboot: "After a reboot, vaktliste is not running."
+  wrong_program: "After a reboot, the vaktliste unit runs something other than the vaktliste app."
+  health_failed: "After a reboot, vaktliste does not answer correctly on port {port}."
