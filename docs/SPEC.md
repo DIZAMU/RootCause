@@ -82,6 +82,8 @@ exercises/svc-01-intranet-config/
     └── no.yaml
 ```
 
+Other files may sit beside these when the Dockerfile copies them into the image, such as an app the machine runs (`app/`). Exercise scripts are never copied into the image.
+
 ### 4.2 exercise.yaml
 
 ```yaml
@@ -91,17 +93,26 @@ topic: services            # permissions | services | logs | networking | disk
 difficulty: 1              # 1 to 3 in v1
 estimated_minutes: 10
 network: none              # none | internal
+init: none                 # none | systemd (optional, default none)
 resources:
   memory: 256Mi
   cpus: 0.5
+tmpfs:                     # optional size-limited in-memory volumes
+  - path: /srv/data
+    size: 32Mi
 session_ttl_minutes: 60
 check:
   runs_from: sandbox       # sandbox | runner
   before: none             # none | restart
+capabilities: [SETUID, SETGID, CHOWN]   # added back after --cap-drop ALL; only from the loader's allowlist
 variants:
   site_name: [intranet, wiki, portal]
   port: [8080, 8081, 8088]
 ```
+
+- `init: systemd` boots systemd as PID 1, for exercises about services at boot. The image runs systemd as its entrypoint. The sandbox gets in-memory `/run` and `/run/lock` instead of Docker's init, since systemd reaps processes itself. A new sandbox counts as ready only when `systemctl is-system-running` reports `running`. After the check's restart, `degraded` also counts, so the check grades what the learner left.
+- `tmpfs` volumes count toward `resources.memory`. Their total must stay below it.
+- `runs_from: runner` needs `network: internal` and cannot be combined with `init: systemd`.
 
 ### 4.3 Script contracts
 
@@ -121,6 +132,7 @@ variants:
 - Prints one line of JSON: `{"passed": false, "feedback": "site_unreachable"}`. The feedback key maps to a text in i18n that describes the symptom, never the fix.
 - Accepts every valid fix and rejects shortcuts. Each check has at least one anti-shortcut assertion. Example: the config is valid and the original site content is served, so replacing the config with a default one fails.
 - Copied in at check time and deleted afterwards, so the criteria can't be read during the session.
+- With `runs_from: runner`, it runs in a separate runner container instead: a fresh copy of the exercise image on the internal network, with no added capabilities, destroyed after the check. `RC_SANDBOX_HOST` holds the sandbox's host name.
 
 **solution.sh**
 - The reference fix. Never copied into a sandbox image or session. Used only by CI.
@@ -358,7 +370,9 @@ Tests: unique and not-null keys, accepted values for event types and outcomes, r
 ### 13.3 Known limits (v1)
 
 - Checks run inside the sandbox, where the learner is root. A determined learner could replace a tool the check uses, such as `curl` or `nginx`, and fake a pass. This is acceptable for a single-user practice tool. Exercises where it matters use `runs_from: runner`.
-- `check.before: restart` restarts the container. Files stay, but only PID 1 starts again: processes that setup.sh started are gone, and setup.sh does not run again. An exercise that needs a service running after a reboot must arrange that itself (see OQ-1).
+- `check.before: restart` restarts the container. Files stay, but only PID 1 starts again: processes that setup.sh started are gone, and setup.sh does not run again. An exercise that needs services started at boot uses `init: systemd`.
+- In `init: systemd` sandboxes, journald and tmp.mount are masked, because they need capabilities outside the allowlist. Service output is not kept in a journal.
+- Sandboxes on the internal network can reach each other. With one learner and at most two sandboxes, this is accepted.
 
 ## 14. CI/CD
 
@@ -489,8 +503,8 @@ The owner decides when the repo goes public. Ready means:
 
 | ID | Question | Options | Decide by |
 |---|---|---|---|
-| OQ-1 | Service exercises usually rely on systemd, which often needs extra container privileges | a) systemd in the container, if it runs unprivileged on this setup; b) a lighter service manager in the image; c) replace svc-02 with a cron exercise | Phase 3 |
-| OQ-2 | Docker manages resolv.conf inside containers | Verify edits persist through a session. Otherwise the fault lives in lookup order or the local DNS server config | Phase 3 |
+| OQ-1 | Service exercises usually rely on systemd, which often needs extra container privileges | Resolved in Phase 3: a) systemd as PID 1. It boots under the v1 security flags with no capability outside the allowlist, given in-memory `/run` and `/run/lock`. A unit that is started but not enabled is gone after `docker restart`; an enabled one is running again. journald and tmp.mount are masked (they need SETPCAP). Exercises opt in with `init: systemd` | Phase 3 |
+| OQ-2 | Docker manages resolv.conf inside containers | Resolved in Phase 3: `/etc/resolv.conf` is a bind mount. In-place writes persist for the session, but tools that replace the file (`sed -i`, some editors) fail with "Device or resource busy", and `docker restart` regenerates it. So net-01's fault lives in lookup order (`/etc/nsswitch.conf`) or the local DNS server config, and its fix never needs a resolv.conf edit | Phase 3 |
 | OQ-3 | The learner is root inside the sandbox | v1 resolved: userns-remap (`/etc/docker/daemon.json` with `{"userns-remap": "default"}`). Chosen over rootless Docker because it keeps the existing daemon and needs one config change. Verified with `docker info` showing `name=userns`; container root maps to host UID 100000. The CLI refuses to run sessions without userns or rootless mode. v2: gVisor or user namespaces | Phase 9 (v2) |
 | OQ-4 | Argo CD memory use on a 16 GB laptop next to the cluster | Argo CD, or Flux if too heavy | Phase 8 |
 | OQ-5 | Public live demo | Recording only, or Oracle Cloud free tier (ARM, idle reclaim risk) | After v1 |
