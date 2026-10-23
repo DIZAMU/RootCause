@@ -311,7 +311,9 @@ dbt reads the source tables in schema `public` and writes every model to schema 
 
 Tests: unique and not-null keys, accepted values for event types, statuses and outcomes, relationships between sessions and events. Singular tests assert one level row per learner and topic, and one review row per learner and exercise.
 
-The project lives in `dbt/`. `internal/dbt` runs `dbt build` in the pinned `dbt-postgres` image with `docker run`. The container joins the compose network and reaches Postgres by service name. It runs with no capabilities, a read-only root filesystem, the project mounted read-only, and targets and logs in `/tmp`. The connection comes from the engine's database URL, and the password reaches the container only through its environment. dbt runs only against the compose Postgres, never over the host network.
+The project lives in `dbt/` and is embedded in the binary. `internal/dbt` extracts it into a fresh temporary directory for each build, so a build never reads the working tree, and runs `dbt build` in the pinned `dbt-postgres` image with `docker run`. The container joins the compose network and reaches Postgres by service name. It runs with no capabilities, a read-only root filesystem, the project mounted read-only, and targets and logs in `/tmp`. The connection comes from the engine's database URL, and the password reaches the container only through its environment. dbt runs only against the compose Postgres, never over the host network. For tests and CI only, `RC_DBT_NETWORK` and `RC_DBT_HOST` name another Postgres container's network and host, such as a CI service container.
+
+Every dbt container is labelled with its database. Before a build, containers left by an earlier build of the same database are removed. A build passes only when dbt exits 0 and runs exactly as many nodes as the project defines, so a run that silently skips models or tests fails. A failed build keeps its full `dbt.log` under the user cache directory and prints the path.
 
 ### 9.3 When dbt runs
 
@@ -394,13 +396,15 @@ Implementation:
 
 | Workflow | Runs on | Does |
 |---|---|---|
-| `ci.yml` | Every push and PR | go vet, golangci-lint, go test, shellcheck on all scripts, frontend type check and build, i18n key parity |
+| `ci.yml` | Every PR and push to main | go vet, golangci-lint, go test, shellcheck on all scripts, frontend type check and build, i18n key parity. Postgres comes from `rootcause init`, and any skipped test fails the run |
 | `exercises.yml` | Changes under `exercises/` | For each changed exercise and 3 seeds: build the image; break then check must fail; break, solution, check must pass |
-| `dbt.yml` | Changes under `dbt/` | dbt build against a Postgres service container with seed data |
+| `dbt.yml` | Changes under `dbt/` | dbt build against a Postgres service container with seed data: a scripted series of sessions played through the engine |
 | `commit-policy.yml` | Every PR | Rejects Co-authored-by trailers, tool attribution lines, author emails other than the owner's, and unsigned commits |
 | `release.yml` (v2) | Tags on main | Builds and pushes images to GHCR, updates image tags in `deploy/k8s`. Argo CD syncs |
 
 - Private repo on the free plan means limited Actions minutes. Only changed exercises are validated per PR. Full validation runs on tags.
+- `exercises.yml` and `dbt.yml` start on every PR and push to main, and decide inside the job whether anything changed, so they can be required checks.
+- Every action is pinned by commit SHA. Workflows have no permissions by default, and each job gets read access to the repository only.
 - GHCR images are private while the repo is private, so the cluster needs an image pull secret.
 - Images target linux/amd64 only, until something needs ARM.
 
@@ -510,6 +514,7 @@ Done when: a merged change reaches the cluster without manual kubectl.
 The owner decides when the repo goes public. Ready means:
 
 - Phases 0 to 6 complete, CI green.
+- A ruleset on `main` requires the CI checks, signed commits and pull requests, as listed in the README.
 - README explains the purpose and architecture, and how to run it locally in under 10 minutes.
 - Demo recording in the README.
 - Git history scanned for secrets, none found.
@@ -545,15 +550,16 @@ RootCause/
 │   ├── dbt/                  runs the dbt project in a container
 │   ├── store/                Postgres access, migrations
 │   ├── server/               HTTP API for the dashboard
+│   ├── testenv/              shared skip and fail rules for integration tests
 │   └── i18n/
 ├── web/                      React + TypeScript (Vite); embed.go embeds dist/ with -tags webdist
 ├── exercises/<id>/
-├── dbt/
+├── dbt/                      dbt project; embed.go embeds it in the binary
 ├── deploy/
 │   ├── compose/              v1: Postgres (dbt runs with docker run, see 9.2)
 │   └── k8s/                  v2: manifests
 ├── locales/                  en.json, no.json
-├── scripts/                  validate-exercise.sh, build-web.sh
+├── scripts/                  validate-exercise.sh, build-web.sh, CI helpers
 ├── .githooks/                commit-msg
 ├── .github/workflows/
 ├── docs/

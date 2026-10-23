@@ -28,6 +28,47 @@ The server listens on 127.0.0.1 only. WSL2 forwards `localhost` from Windows to 
 
 Exercises that boot systemd (such as svc-02) need a host with cgroup v2. WSL2 uses cgroup v2 by default. Check with `docker info --format '{{.CgroupVersion}}'`, which must print `2`.
 
+## Tests
+
+Unit tests need nothing: `go test ./...`. Integration tests need a database whose name ends in `_test`, and Docker with userns-remap:
+
+```bash
+docker exec rootcause-postgres-1 createdb -U rootcause rootcause_test
+export RC_TEST_DATABASE_URL="postgres://rootcause:<password>@127.0.0.1:5432/rootcause_test?sslmode=disable"
+go test -count=1 ./...
+```
+
+- A test skips only when `RC_TEST_DATABASE_URL` is unset, or when Docker is missing. If the variable is set but the database is unreachable or not a `_test` database, the test fails.
+- `RC_REQUIRE_DOCKER=1` makes a missing Docker fail the tests too. CI sets it.
+- Tests that run dbt create and drop their own database (for example `rootcause_selector_test`), because a dbt build reads every row in its database.
+- `RC_DBT_STRESS=1 go test -run TestBuildStress ./internal/dbt/` kills dbt builds at random points and checks that the next build succeeds. `RC_DBT_STRESS_ROUNDS` sets the rounds (default 10).
+- A failed dbt build saves its full `dbt.log` under `~/.cache/rootcause/dbt-logs/` and prints the path. The newest 20 are kept.
+
+## CI
+
+GitHub Actions runs four workflows (spec section 14). Every action is pinned by commit SHA, and every job gets read-only access to the repository and nothing else.
+
+| Workflow | Check name | Does |
+|---|---|---|
+| `ci.yml` | `ci-checks`, `ci-test` | gofmt, go vet, golangci-lint, shellcheck, i18n parity, the dashboard build, and every Go test with Postgres and Docker. Fails if any test is skipped |
+| `exercises.yml` | `exercises` | Validates the changed exercises with seeds 1, 2 and 3. All of them on tags `v*` and on manual runs |
+| `dbt.yml` | `dbt` | dbt build against a Postgres service container, when the dbt project or its inputs changed |
+| `commit-policy.yml` | `commit-policy` | Rejects Co-authored-by trailers, tool attribution lines, author emails other than the owner's, and commits GitHub does not show as Verified |
+
+Run the same commit check locally with `scripts/check-commit-policy.sh origin/main HEAD`.
+
+### When the repo goes public
+
+On the free plan, branch protection does not apply to private repositories, so a red check does not block the merge button. The rule until then: never merge a PR with a red check. When the repo goes public, add a ruleset under Settings, Rules, Rulesets:
+
+- Target: the default branch (`main`). Enforcement: Active. No bypass list.
+- Restrict deletions, and block force pushes.
+- Require a pull request before merging, with merge commits only (squash and rebase drop the SSH signatures).
+- Require signed commits.
+- Require status checks to pass, with the branch up to date: `ci-checks`, `ci-test`, `exercises`, `dbt`, `commit-policy`. Every workflow starts on every PR and decides inside the job what to run, so none of these checks stays pending.
+
+Known gap to close when the ruleset goes on: the workflows, `scripts/check-commit-policy.sh` and `.githooks/commit-msg` run from the PR's own commits, so a PR could weaken the checks that judge it. Before the repo goes public, make `commit-policy.yml` check out the base branch's copy of the script and hook, and require review of changes under `.github/`, `scripts/` and `.githooks/`.
+
 ## License
 
 PolyForm Noncommercial 1.0.0. See [`LICENSE`](LICENSE).
