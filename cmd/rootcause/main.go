@@ -1,9 +1,8 @@
 // Command rootcause is the RootCause CLI (spec section 10).
 //
-// Phase 2 implements the local play loop on Docker: init, start, shell, ticket,
-// hint, check, reset, giveup, status, list, lang. The developer commands
-// validate and vars need no database. Later phases add next (selector) and
-// serve (dashboard).
+// The play commands are init, next, start, shell, ticket, hint, check, reset,
+// giveup, status, list, stats and lang. The developer commands validate, vars
+// and selftest need no database. A later phase adds serve (dashboard).
 package main
 
 import (
@@ -52,6 +51,8 @@ func runApp(ctx context.Context, cmd string, args []string) int {
 
 	var cmdErr error
 	switch cmd {
+	case "next":
+		cmdErr = app.Next(ctx)
 	case "start":
 		cmdErr = app.Start(ctx, args)
 	case "ticket":
@@ -70,6 +71,8 @@ func runApp(ctx context.Context, cmd string, args []string) int {
 		cmdErr = app.Status(ctx)
 	case "list":
 		cmdErr = app.List(ctx)
+	case "stats":
+		cmdErr = app.Stats(ctx, args)
 	case "lang":
 		cmdErr = app.Lang(ctx, args)
 	default:

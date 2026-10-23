@@ -1,0 +1,165 @@
+package cli
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"math/rand"
+	"path/filepath"
+	"time"
+
+	"github.com/DIZAMU/RootCause/internal/dbt"
+	"github.com/DIZAMU/RootCause/internal/exercise"
+	"github.com/DIZAMU/RootCause/internal/selector"
+	"github.com/DIZAMU/RootCause/internal/store"
+)
+
+// Next starts the recommended next exercise (spec sections 7.2 and 10).
+func (a *App) Next(ctx context.Context) error {
+	if cur, ok, err := a.active(ctx); err != nil {
+		return err
+	} else if ok {
+		a.say("start.active_exists", map[string]string{"exercise": cur.ExerciseID})
+		return nil
+	}
+	rows, err := loadAllExercises(a.root)
+	if err != nil {
+		return err
+	}
+	catalog := make([]selector.Exercise, len(rows))
+	for i, r := range rows {
+		catalog[i] = selector.Exercise{ID: r.ID, Topic: r.Topic, Difficulty: r.Difficulty}
+	}
+
+	loaded, err := selector.Load(ctx, selector.Deps{
+		Store: a.st,
+		Level: a.eng.TopicLevel,
+		Refresh: func(ctx context.Context) error {
+			a.say("stats.updating", nil)
+			return a.buildStats(ctx)
+		},
+	}, a.learner.ID, catalog)
+	if err != nil {
+		return err
+	}
+	if loaded.RefreshErr != nil {
+		a.warnRefresh(loaded.RefreshErr)
+	}
+	if loaded.Source == selector.SourceFallback {
+		a.say("next.fallback", nil)
+	}
+
+	pick, err := selector.Next(loaded.Input, time.Now())
+	if errors.Is(err, selector.ErrNoCandidate) {
+		a.say("next.none", nil)
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	seed := rand.Int63()
+	if pick.Reason == selector.ReasonReview {
+		ex, err := exercise.Load(filepath.Join(a.root, "exercises", pick.Exercise.ID))
+		if err != nil {
+			return err
+		}
+		seed = selector.ReviewSeed(ex.SelectVariant, *pick.Due, rand.Int63)
+		a.say("next.review", map[string]string{"exercise": pick.Exercise.ID})
+	} else {
+		level := loaded.Input.Topics[pick.Exercise.Topic].Level
+		if level == 0 {
+			level = 1
+		}
+		a.say("next.weakest", map[string]string{
+			"exercise": pick.Exercise.ID, "topic": pick.Exercise.Topic, "level": fmt.Sprint(level),
+		})
+	}
+	return a.startExercise(ctx, pick.Exercise.ID, seed)
+}
+
+// Stats shows the per-exercise statistics from the marts (spec section 7.3).
+// With --refresh it rebuilds them first (spec section 9.3).
+func (a *App) Stats(ctx context.Context, args []string) error {
+	switch {
+	case len(args) == 0:
+	case len(args) == 1 && args[0] == "--refresh":
+		a.say("stats.updating", nil)
+		if err := a.buildStats(ctx); err != nil {
+			return fail("stats.refresh_failed", err)
+		}
+	default:
+		a.say("stats.usage", nil)
+		return nil
+	}
+
+	stats, err := a.st.MartExerciseStats(ctx)
+	if errors.Is(err, store.ErrNoMarts) {
+		a.say("stats.none", nil)
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if fresh, err := a.st.MartsFresh(ctx, a.learner.ID); err != nil {
+		return err
+	} else if !fresh {
+		a.say("stats.stale", nil)
+	}
+	a.say("stats.header", nil)
+	for _, s := range stats {
+		a.say("stats.row", map[string]string{
+			"id":         s.ExerciseID,
+			"topic":      s.Topic,
+			"difficulty": fmt.Sprint(s.Difficulty),
+			"sessions":   fmt.Sprint(s.Sessions),
+			"solves":     fmt.Sprint(s.Solves),
+			"rate":       orDash(s.SolveRate, func(v float64) string { return fmt.Sprintf("%.0f%%", v*100) }),
+			"hints":      orDash(s.AvgHints, func(v float64) string { return fmt.Sprintf("%.1f", v) }),
+			"time":       orDash(s.AvgSolveSeconds, func(v float64) string { return (time.Duration(v) * time.Second).String() }),
+			"flag":       a.flagText(s.CalibrationFlag),
+		})
+	}
+	return nil
+}
+
+// refreshAfterSession rebuilds the marts after a finished session (spec
+// section 9.3). The session's result is already printed and saved, so a
+// failure here is only a warning: the next pick falls back to topic levels.
+func (a *App) refreshAfterSession(ctx context.Context) {
+	a.say("stats.updating", nil)
+	if err := a.buildStats(ctx); err != nil {
+		a.warnRefresh(err)
+	}
+}
+
+// buildStats runs dbt against the app's database.
+func (a *App) buildStats(ctx context.Context) error {
+	return dbt.Build(ctx, filepath.Join(a.root, "dbt"), a.dsn)
+}
+
+// warnRefresh prints a failed refresh as a warning, with its detail.
+func (a *App) warnRefresh(err error) {
+	fmt.Fprintln(a.out, Message(a.bundle, a.lang(), fail("stats.refresh_failed", err)))
+}
+
+func (a *App) flagText(flag *string) string {
+	switch {
+	case flag == nil:
+		return ""
+	case *flag == "too_hard":
+		return a.t("stats.flag_too_hard", nil)
+	case *flag == "too_easy":
+		return a.t("stats.flag_too_easy", nil)
+	default:
+		return "  (" + *flag + ")"
+	}
+}
+
+// orDash formats v, or returns "-" when there is no value.
+func orDash(v *float64, format func(float64) string) string {
+	if v == nil {
+		return "-"
+	}
+	return format(*v)
+}

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/DIZAMU/RootCause/internal/i18n"
+	"github.com/DIZAMU/RootCause/internal/runtime"
 	"github.com/DIZAMU/RootCause/internal/session"
 	"github.com/DIZAMU/RootCause/locales"
 )
@@ -39,6 +40,10 @@ func TestMessage(t *testing.T) {
 			[]string{"svc-99", "rootcause list"}},
 		{"wrapped engine sentinel", "en", fmt.Errorf("give up: %w", session.ErrGiveUpTooEarly),
 			[]string{"hint 3"}},
+		{"cgroup v1 host, no", "no", fmt.Errorf("%w (docker reports cgroup version \"1\")", runtime.ErrNeedsCgroupV2),
+			[]string{"cgroup v2"}},
+		{"failed refresh with details", "en", fail("stats.refresh_failed", errors.New("dbt build exited 1")),
+			[]string{"Could not update your statistics", "Details: dbt build exited 1"}},
 		{"unknown error, generic heading", "no", errors.New("boom"), []string{"Noe gikk galt: boom"}},
 	}
 	for _, c := range cases {

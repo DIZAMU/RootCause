@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/DIZAMU/RootCause/internal/exercise"
 	"github.com/DIZAMU/RootCause/internal/i18n"
@@ -32,8 +33,12 @@ func (a *App) Start(ctx context.Context, args []string) error {
 	if !fileExists(filepath.Join(a.root, "exercises", args[0], "exercise.yaml")) {
 		return failWith("start.unknown_exercise", map[string]string{"id": args[0]}, nil)
 	}
-	seed := rand.Int63()
-	sess, err := a.eng.Start(ctx, a.learner.ID, args[0], seed)
+	return a.startExercise(ctx, args[0], rand.Int63())
+}
+
+// startExercise starts exerciseID with seed and shows its ticket.
+func (a *App) startExercise(ctx context.Context, exerciseID string, seed int64) error {
+	sess, err := a.eng.Start(ctx, a.learner.ID, exerciseID, seed)
 	if errors.Is(err, store.ErrActiveSession) {
 		// Another start won the race (migration 0002 enforces one active
 		// session); report it the same way as the check above.
@@ -133,6 +138,7 @@ func (a *App) Check(ctx context.Context) error {
 		if res.Level != nil {
 			a.announceLevel(res.Level)
 		}
+		a.refreshAfterSession(ctx)
 	default:
 		if fb := feedbackText(texts, res.Feedback, vars); fb != "" {
 			a.say("check.fail", map[string]string{"feedback": fb})
@@ -193,11 +199,12 @@ func (a *App) GiveUp(ctx context.Context) error {
 	if lc != nil {
 		a.announceLevel(lc)
 	}
+	a.refreshAfterSession(ctx)
 	return nil
 }
 
-// Status shows the active session, the level per topic and the best stars per
-// exercise. (The review queue arrives with dbt in Phase 4.)
+// Status shows the active session, the level per topic, the review queue and
+// the best stars per exercise (spec section 10).
 func (a *App) Status(ctx context.Context) error {
 	if sess, ok, err := a.active(ctx); err != nil {
 		return err
@@ -209,7 +216,38 @@ func (a *App) Status(ctx context.Context) error {
 	if err := a.printLevels(ctx); err != nil {
 		return err
 	}
+	if err := a.printReviewQueue(ctx); err != nil {
+		return err
+	}
 	return a.List(ctx)
+}
+
+// printReviewQueue shows the exercises waiting for review, from the marts, as
+// of their last build.
+func (a *App) printReviewQueue(ctx context.Context) error {
+	a.say("status.review_header", nil)
+	queue, err := a.st.MartReviewQueue(ctx, a.learner.ID)
+	if errors.Is(err, store.ErrNoMarts) {
+		a.say("status.review_unavailable", nil)
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if len(queue) == 0 {
+		a.say("status.review_empty", nil)
+	}
+	now := time.Now()
+	for _, r := range queue {
+		if !r.DueAt.After(now) {
+			a.say("status.review_due_now", map[string]string{"exercise": r.ExerciseID})
+			continue
+		}
+		a.say("status.review_due", map[string]string{
+			"exercise": r.ExerciseID, "due": r.DueAt.Local().Format("2006-01-02 15:04"),
+		})
+	}
+	return nil
 }
 
 // printLevels shows the current level for each topic (spec section 7.1),

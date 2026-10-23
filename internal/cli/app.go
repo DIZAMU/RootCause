@@ -25,6 +25,7 @@ import (
 // App holds everything a command needs.
 type App struct {
 	root    string
+	dsn     string // the database the store uses; dbt builds against it
 	st      *store.Store
 	eng     *session.Engine
 	rt      *docker.Runtime
@@ -95,7 +96,7 @@ func NewApp(ctx context.Context) (*App, error) {
 	// Best-effort: a reap error must not block the command.
 	_, _ = session.NewReaper(eng, st, 0).ReapOnce(ctx)
 
-	return &App{root: root, st: st, eng: eng, rt: rt, bundle: bundle, learner: learner, out: os.Stdout}, nil
+	return &App{root: root, dsn: dsn, st: st, eng: eng, rt: rt, bundle: bundle, learner: learner, out: os.Stdout}, nil
 }
 
 // Close releases resources.
