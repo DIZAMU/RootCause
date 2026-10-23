@@ -3,6 +3,7 @@ package docker
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -209,5 +210,73 @@ func TestTmpfsAndInit(t *testing.T) {
 	}
 	if res.ExitCode == 0 || !strings.Contains(string(res.Stderr), "No space left") {
 		t.Errorf("9M write into 8Mi tmpfs: exit %d, stderr %q; want a no-space failure", res.ExitCode, res.Stderr)
+	}
+}
+
+// TestDiagnose checks that Diagnose reports the exit code and the last log
+// lines of a sandbox whose PID 1 exited at once, created through the real
+// Create path.
+func TestDiagnose(t *testing.T) {
+	r := newOrSkip(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	const image = "rootcause/runtime-test-exits:latest"
+	dir := t.TempDir()
+	dockerfile := "FROM " + testImageBase + "\nENTRYPOINT [\"sh\", \"-c\", \"echo boot failed >&2; exit 3\"]\n"
+	if err := os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte(dockerfile), 0o644); err != nil {
+		t.Fatalf("write Dockerfile: %v", err)
+	}
+	if err := r.BuildImage(ctx, image, dir); err != nil {
+		t.Fatalf("build image: %v", err)
+	}
+
+	name := "rc-test-diagnose-" + sanitize(t.Name())
+	_ = r.Destroy(ctx, name)
+	if _, err := r.Create(ctx, runtime.SandboxSpec{
+		Name: name, Image: image, Memory: "64Mi", CPUs: 0.5, Network: "none",
+	}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	t.Cleanup(func() { _ = r.Destroy(context.Background(), name) })
+
+	// Poll until the container has exited.
+	for {
+		out, _ := exec.CommandContext(ctx, "docker", "inspect", "--format", "{{.State.Status}}", name).Output()
+		if strings.TrimSpace(string(out)) == "exited" {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal("container did not exit")
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+
+	got := r.Diagnose(ctx, name)
+	for _, want := range []string{"status exited", "exit code 3", "boot failed"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("Diagnose = %q, want it to contain %q", got, want)
+		}
+	}
+	if got := r.Diagnose(ctx, name+"-missing"); !strings.Contains(got, "state unknown") {
+		t.Errorf("Diagnose of a missing sandbox = %q, want state unknown", got)
+	}
+}
+
+// TestCheckSystemd checks CheckSystemd against the daemon's own report: it
+// passes exactly when docker info says cgroup version 2.
+func TestCheckSystemd(t *testing.T) {
+	r := newOrSkip(t)
+	out, err := exec.Command("docker", "info", "--format", "{{.CgroupVersion}}").Output()
+	if err != nil {
+		t.Fatalf("docker info: %v", err)
+	}
+	err = r.CheckSystemd(context.Background())
+	if v2 := strings.TrimSpace(string(out)) == "2"; v2 != (err == nil) {
+		t.Errorf("cgroup version %q: CheckSystemd = %v", strings.TrimSpace(string(out)), err)
+	}
+	if err != nil && !errors.Is(err, runtime.ErrNeedsCgroupV2) {
+		t.Errorf("CheckSystemd error %v is not ErrNeedsCgroupV2", err)
 	}
 }

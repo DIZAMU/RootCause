@@ -41,6 +41,8 @@ func New() (*Runtime, error) {
 
 var _ runtime.Runtime = (*Runtime)(nil)
 var _ runtime.Sheller = (*Runtime)(nil)
+var _ runtime.Diagnoser = (*Runtime)(nil)
+var _ runtime.SystemdChecker = (*Runtime)(nil)
 
 // Create starts a locked-down sandbox and returns it.
 func (r *Runtime) Create(ctx context.Context, spec runtime.SandboxSpec) (runtime.Sandbox, error) {
@@ -126,6 +128,47 @@ var ErrNotIsolated = errors.New("docker daemon runs without userns-remap or root
 func isolated(securityOptions string) bool {
 	return strings.Contains(securityOptions, "name=userns") ||
 		strings.Contains(securityOptions, "name=rootless")
+}
+
+// CheckSystemd returns runtime.ErrNeedsCgroupV2 unless the daemon reports
+// cgroup version 2. systemd 257 (Debian 13) does not boot on cgroup v1.
+func (r *Runtime) CheckSystemd(ctx context.Context) error {
+	out, errOut, err := r.run(ctx, nil, "info", "--format", "{{.CgroupVersion}}")
+	if err != nil {
+		return fmt.Errorf("docker info: %w: %s", err, strings.TrimSpace(errOut))
+	}
+	if v := strings.TrimSpace(string(out)); v != "2" {
+		return fmt.Errorf("%w (docker reports cgroup version %q)", runtime.ErrNeedsCgroupV2, v)
+	}
+	return nil
+}
+
+// diagnoseLogLines is how many of a sandbox's last log lines Diagnose shows.
+const diagnoseLogLines = 20
+
+// Diagnose describes a sandbox's state for an error message: its status, its
+// exit code and its last log lines. It never fails; what it cannot read, it
+// says it cannot read.
+func (r *Runtime) Diagnose(ctx context.Context, id string) string {
+	var b strings.Builder
+	out, errOut, err := r.run(ctx, nil, "inspect", "--format", "{{.State.Status}} {{.State.ExitCode}}", id)
+	if err != nil {
+		fmt.Fprintf(&b, "state unknown: %s", strings.TrimSpace(errOut))
+	} else if status, code, ok := strings.Cut(strings.TrimSpace(string(out)), " "); ok {
+		fmt.Fprintf(&b, "status %s, exit code %s", status, code)
+	}
+	// docker logs writes the container's stdout and stderr to its own.
+	logs, logErr, err := r.run(ctx, nil, "logs", "--tail", fmt.Sprint(diagnoseLogLines), id)
+	tail := strings.TrimSpace(string(logs) + logErr)
+	switch {
+	case err != nil:
+		b.WriteString("; logs unavailable")
+	case tail == "":
+		b.WriteString("; no log output")
+	default:
+		fmt.Fprintf(&b, "; last log lines:\n%s", tail)
+	}
+	return b.String()
 }
 
 // Exec runs a command in the sandbox and captures its output and exit code.

@@ -5,6 +5,7 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"io"
 	"time"
 )
@@ -68,3 +69,20 @@ type ExecResult struct {
 type Sheller interface {
 	Shell(ctx context.Context, id string, cmd []string) error
 }
+
+// Diagnoser is an optional capability: describe a sandbox that did not become
+// ready, for example its exit code and its last log lines, so the error says
+// why instead of only that it timed out.
+type Diagnoser interface {
+	Diagnose(ctx context.Context, id string) string
+}
+
+// SystemdChecker is an optional capability: report whether the host can boot
+// systemd as PID 1 in a sandbox. It returns ErrNeedsCgroupV2 if it cannot.
+type SystemdChecker interface {
+	CheckSystemd(ctx context.Context) error
+}
+
+// ErrNeedsCgroupV2 means the host runs cgroup v1, where the systemd in the
+// exercise images refuses to boot.
+var ErrNeedsCgroupV2 = errors.New("this exercise needs a host with cgroup v2")
