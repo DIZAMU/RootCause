@@ -2,41 +2,28 @@ package session
 
 import (
 	"context"
-	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/DIZAMU/RootCause/internal/exercise"
 	"github.com/DIZAMU/RootCause/internal/runtime/docker"
-	"github.com/DIZAMU/RootCause/internal/store"
+	"github.com/DIZAMU/RootCause/internal/testenv"
 )
 
 // TestReaperExpiresDueSession starts a real session, backdates its TTL, and
 // checks the reaper expires it: status expired, sandbox gone, expired event.
 func TestReaperExpiresDueSession(t *testing.T) {
-	dsn := store.TestDSN()
-	if dsn == "" {
-		t.Skip("RC_TEST_DATABASE_URL not set to a database ending in _test")
-	}
-	if err := exec.Command("docker", "info").Run(); err != nil {
-		t.Skip("docker not reachable:", err)
-	}
+	dsn := testenv.DSN(t)
+	testenv.Docker(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	st, err := store.Open(ctx, dsn)
-	if err != nil {
-		t.Skip("db not reachable:", err)
-	}
-	t.Cleanup(st.Close)
-	if err := st.Migrate(ctx); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	st := testenv.Store(t, dsn)
 
 	rt, err := docker.New()
 	if err != nil {
-		t.Skip("docker runtime:", err)
+		testenv.NoDocker(t, "docker runtime:", err)
 	}
 	learnerID := testLearner(t, st, rt)
 	exDir, _ := filepath.Abs("../../exercises")
@@ -96,27 +83,15 @@ func TestReaperExpiresDueSession(t *testing.T) {
 // this database: the selftest sandbox, the sandbox owned by another database
 // and the sandbox of an active session all survive.
 func TestReaperReclaimsOrphans(t *testing.T) {
-	dsn := store.TestDSN()
-	if dsn == "" {
-		t.Skip("RC_TEST_DATABASE_URL not set to a database ending in _test")
-	}
-	if err := exec.Command("docker", "info").Run(); err != nil {
-		t.Skip("docker not reachable:", err)
-	}
+	dsn := testenv.DSN(t)
+	testenv.Docker(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	st, err := store.Open(ctx, dsn)
-	if err != nil {
-		t.Skip("db not reachable:", err)
-	}
-	t.Cleanup(st.Close)
-	if err := st.Migrate(ctx); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	st := testenv.Store(t, dsn)
 	rt, err := docker.New()
 	if err != nil {
-		t.Skip("docker runtime:", err)
+		testenv.NoDocker(t, "docker runtime:", err)
 	}
 	learnerID := testLearner(t, st, rt)
 	exDir, _ := filepath.Abs("../../exercises")

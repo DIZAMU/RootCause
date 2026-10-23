@@ -2,23 +2,21 @@ package selector_test
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"maps"
 	"math/rand"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"testing"
 	"time"
 
-	"github.com/DIZAMU/RootCause/internal/dbt"
 	"github.com/DIZAMU/RootCause/internal/exercise"
 	"github.com/DIZAMU/RootCause/internal/play"
 	"github.com/DIZAMU/RootCause/internal/runtime/scripted"
 	"github.com/DIZAMU/RootCause/internal/selector"
 	"github.com/DIZAMU/RootCause/internal/session"
 	"github.com/DIZAMU/RootCause/internal/store"
+	"github.com/DIZAMU/RootCause/internal/testenv"
 )
 
 // result is how a scripted session ends.
@@ -40,7 +38,6 @@ type world struct {
 	rt       *scripted.Runtime
 	learner  int
 	exDir    string
-	project  string
 	dsn      string
 	catalog  []selector.Exercise
 	lastSeed map[string]int64
@@ -105,7 +102,7 @@ func (w *world) pick(refresh bool) (selector.Pick, selector.Loaded) {
 	w.t.Helper()
 	deps := selector.Deps{Store: w.st, Level: w.eng.TopicLevel}
 	if refresh {
-		deps.Refresh = func(ctx context.Context) error { return dbt.Build(ctx, w.project, w.dsn) }
+		deps.Refresh = func(ctx context.Context) error { return play.BuildStats(ctx, w.st, w.dsn) }
 	}
 	loaded, err := selector.Load(w.ctx, deps, w.learner, w.catalog)
 	if err != nil {
@@ -138,36 +135,23 @@ func (w *world) expect(step, wantID string, wantReason selector.Reason) selector
 // after a scripted series of sessions, the selector picks the expected
 // exercises. Sessions run through the real engine and store, the marts are
 // built by the real dbt container, and picks go through the real Load and
-// Next. It needs Docker and RC_TEST_DATABASE_URL, and uses its own learner.
+// Next. It needs Docker and RC_TEST_DATABASE_URL. dbt reads every row in its
+// database, so the test runs in a database of its own, which no other test
+// package writes to while it runs.
 func TestScriptedSelection(t *testing.T) {
-	dsn := store.TestDSN()
-	if dsn == "" {
-		t.Skip("RC_TEST_DATABASE_URL not set to a database ending in _test")
-	}
-	if err := exec.Command("docker", "info").Run(); err != nil {
-		t.Skip("docker daemon not reachable:", err)
-	}
+	testenv.Docker(t)
+	dsn := testenv.OwnDatabase(t, "selector")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
-	st, err := store.Open(ctx, dsn)
-	if err != nil {
-		t.Skip("db not reachable:", err)
-	}
-	t.Cleanup(st.Close)
-	if err := st.Migrate(ctx); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-	project, _ := filepath.Abs("../../dbt")
-	if err := dbt.Build(ctx, project, dsn); errors.Is(err, dbt.ErrUnsupportedDatabase) {
-		t.Skip("dbt needs the compose Postgres:", err)
-	} else if err != nil {
+	st := testenv.Store(t, dsn)
+	if err := play.BuildStats(ctx, st, dsn); err != nil {
 		t.Fatalf("first dbt build: %v", err)
 	}
 
 	exDir, _ := filepath.Abs("../../exercises")
 	rt := &scripted.Runtime{}
 	w := &world{
-		t: t, ctx: ctx, st: st, rt: rt, exDir: exDir, project: project, dsn: dsn,
+		t: t, ctx: ctx, st: st, rt: rt, exDir: exDir, dsn: dsn,
 		eng:      session.New(rt, rt, nil, st, exDir),
 		learner:  testLearner(t, st),
 		catalog:  loadCatalog(t, exDir),
@@ -276,8 +260,8 @@ func TestScriptedSelection(t *testing.T) {
 	if loaded.Input.Review != nil {
 		t.Errorf("fallback has a review queue: %v", loaded.Input.Review)
 	}
-	// Leave the marts built for whoever runs next.
-	if err := dbt.Build(ctx, project, dsn); err != nil {
+	// The marts build again from scratch.
+	if err := play.BuildStats(ctx, st, dsn); err != nil {
 		t.Fatalf("rebuild marts: %v", err)
 	}
 }

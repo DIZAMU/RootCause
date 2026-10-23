@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
-	"path/filepath"
 	"time"
 
 	"github.com/DIZAMU/RootCause/internal/play"
@@ -119,7 +118,7 @@ func (a *App) refreshAfterSession(ctx context.Context) {
 
 // buildStats runs dbt against the app's database, under the stats lock.
 func (a *App) buildStats(ctx context.Context) error {
-	return play.BuildStats(ctx, a.st, filepath.Join(a.root, "dbt"), a.dsn)
+	return play.BuildStats(ctx, a.st, a.dsn)
 }
 
 // warnRefresh prints a failed refresh as a warning, with its detail.

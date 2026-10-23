@@ -28,7 +28,8 @@ func freshSchemaStores(t *testing.T, n int) []*Store {
 	})
 
 	// Point new connections at the empty schema only.
-	u, err := url.Parse(TestDSN())
+	dsn, _ := TestDSN() // openOrSkip above already checked it
+	u, err := url.Parse(dsn)
 	if err != nil {
 		t.Fatalf("parse dsn: %v", err)
 	}

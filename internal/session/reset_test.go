@@ -9,6 +9,7 @@ import (
 
 	"github.com/DIZAMU/RootCause/internal/runtime"
 	"github.com/DIZAMU/RootCause/internal/store"
+	"github.com/DIZAMU/RootCause/internal/testenv"
 )
 
 // brokenRuntime creates sandboxes that pass the readiness probe, but every
@@ -37,20 +38,10 @@ func (b *brokenRuntime) List(context.Context) ([]runtime.Sandbox, error) { retur
 // prepared voids the session, logs a voided event with the reason, and
 // destroys the half-built sandbox. No Docker needed; it needs the test DB.
 func TestResetVoidsOnFailure(t *testing.T) {
-	dsn := store.TestDSN()
-	if dsn == "" {
-		t.Skip("RC_TEST_DATABASE_URL not set to a database ending in _test")
-	}
+	dsn := testenv.DSN(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	st, err := store.Open(ctx, dsn)
-	if err != nil {
-		t.Skip("db not reachable:", err)
-	}
-	t.Cleanup(st.Close)
-	if err := st.Migrate(ctx); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	st := testenv.Store(t, dsn)
 	rt := &brokenRuntime{}
 	learnerID := testLearner(t, st, rt)
 

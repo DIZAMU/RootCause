@@ -4,6 +4,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -52,21 +53,26 @@ func (s *Store) Pool() *pgxpool.Pool { return s.pool }
 // DSNFromEnv returns the database DSN from RC_DATABASE_URL, or "" if unset.
 func DSNFromEnv() string { return os.Getenv("RC_DATABASE_URL") }
 
+// ErrUnsafeTestDSN means RC_TEST_DATABASE_URL is set but names a database
+// whose name does not end in "_test".
+var ErrUnsafeTestDSN = errors.New("RC_TEST_DATABASE_URL must name a database ending in _test")
+
 // TestDSN returns the DSN integration tests may use: RC_TEST_DATABASE_URL, and
 // only if its database name ends in "_test". Tests create sessions, change the
 // language and re-sync exercises, so they must never touch the learner's real
-// database. It returns "" when no safe test database is configured.
-func TestDSN() string {
+// database. It returns "" and no error when the variable is unset, and
+// ErrUnsafeTestDSN when it names any other database.
+func TestDSN() (string, error) {
 	dsn := os.Getenv("RC_TEST_DATABASE_URL")
 	if dsn == "" {
-		return ""
+		return "", nil
 	}
 	path := dsn
 	if i := strings.IndexAny(path, "?"); i >= 0 {
 		path = path[:i]
 	}
 	if !strings.HasSuffix(path, "_test") {
-		return ""
+		return "", ErrUnsafeTestDSN
 	}
-	return dsn
+	return dsn, nil
 }

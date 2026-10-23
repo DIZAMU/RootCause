@@ -23,6 +23,7 @@ import (
 	"github.com/DIZAMU/RootCause/internal/server"
 	"github.com/DIZAMU/RootCause/internal/session"
 	"github.com/DIZAMU/RootCause/internal/store"
+	"github.com/DIZAMU/RootCause/internal/testenv"
 	"github.com/DIZAMU/RootCause/locales"
 )
 
@@ -233,19 +234,9 @@ type world struct {
 
 func newWorld(t *testing.T, assets bool) *world {
 	t.Helper()
-	dsn := store.TestDSN()
-	if dsn == "" {
-		t.Skip("RC_TEST_DATABASE_URL not set to a database ending in _test")
-	}
+	dsn := testenv.DSN(t)
 	ctx := context.Background()
-	st, err := store.Open(ctx, dsn)
-	if err != nil {
-		t.Skip("db not reachable:", err)
-	}
-	t.Cleanup(st.Close)
-	if err := st.Migrate(ctx); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	st := testenv.Store(t, dsn)
 	bundle, err := i18n.Load(locales.FS)
 	if err != nil {
 		t.Fatal(err)
