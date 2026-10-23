@@ -1,0 +1,14 @@
+# golangci-lint configuration. CI installs the version pinned in
+# .github/workflows/ci.yml.
+version: "2"
+
+linters:
+  default: standard
+  exclusions:
+    # Unchecked errors from Close, Flush, os.Remove and fmt printing, the
+    # standard idioms whose errors carry nothing to act on.
+    presets: [std-error-handling]
+    rules:
+      # A deferred Rollback after Commit returns pgx.ErrTxClosed by design.
+      - linters: [errcheck]
+        source: 'defer tx\.Rollback\('

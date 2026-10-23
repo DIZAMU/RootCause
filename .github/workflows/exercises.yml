@@ -1,0 +1,78 @@
+# Exercise validation (spec section 14): for each changed exercise and seeds
+# 1, 2 and 3, build the image; break then check must fail; break, solution,
+# check must pass. Pull requests and pushes to main validate only the changed
+# exercises; tags and manual runs validate all of them.
+#
+# The workflow always runs and finds the changed exercises itself, instead of
+# using a paths filter, so it can become a required check: a filtered
+# workflow that never starts leaves a required check pending forever.
+name: exercises
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: exercises-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  validate:
+    name: exercises
+    runs-on: ubuntu-24.04 # cgroup v2, which the init: systemd exercises need
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: find the exercises to validate
+        id: list
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.sha }}
+        run: |
+          if [ "$EVENT" = workflow_dispatch ] || [ "$REF_TYPE" = tag ]; then
+            ids="$(scripts/ci-changed-exercises.sh all)"
+          elif [ "$EVENT" = pull_request ]; then
+            ids="$(scripts/ci-changed-exercises.sh "$PR_BASE" "$PR_HEAD")"
+          elif [ -z "$PUSH_BEFORE" ] || [ "$PUSH_BEFORE" = 0000000000000000000000000000000000000000 ]; then
+            ids="$(scripts/ci-changed-exercises.sh all)"
+          else
+            ids="$(scripts/ci-changed-exercises.sh "$PUSH_BEFORE" "$PUSH_AFTER")"
+          fi
+          echo "exercises to validate: ${ids:-none}"
+          # One line, space-separated; empty when nothing changed.
+          echo "ids=$(tr '\n' ' ' <<<"$ids" | xargs)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        if: steps.list.outputs.ids != ''
+        with:
+          go-version-file: go.mod
+      - name: enable Docker userns-remap
+        if: steps.list.outputs.ids != ''
+        run: sudo scripts/ci-enable-userns.sh
+      - name: validate, seeds 1 2 3
+        if: steps.list.outputs.ids != ''
+        env:
+          IDS: ${{ steps.list.outputs.ids }}
+        run: |
+          for id in $IDS; do
+            for seed in 1 2 3; do
+              echo "::group::$id seed $seed"
+              scripts/validate-exercise.sh "$id" "$seed"
+              echo "::endgroup::"
+            done
+          done
