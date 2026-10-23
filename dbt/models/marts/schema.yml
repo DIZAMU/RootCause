@@ -1,0 +1,51 @@
+version: 2
+
+models:
+  - name: mart_topic_levels
+    columns:
+      - name: learner_id
+        tests: [not_null]
+      - name: topic
+        tests: [not_null]
+      - name: level
+        tests:
+          - not_null
+          - accepted_values:
+              values: [1, 2, 3]
+              quote: false
+
+  - name: mart_review_queue
+    columns:
+      - name: exercise_id
+        tests: [not_null]
+      - name: last_session_id
+        tests:
+          - unique
+          - not_null
+          - relationships:
+              to: ref('stg_sessions')
+              field: session_id
+      - name: last_outcome
+        tests:
+          - accepted_values:
+              values: [solved, gave_up, expired_fail]
+      - name: due_at
+        tests: [not_null]
+
+  - name: mart_exercise_stats
+    columns:
+      - name: exercise_id
+        tests: [unique, not_null]
+      - name: calibration_flag
+        tests:
+          - accepted_values:
+              values: [too_hard, too_easy]
+
+  - name: mart_progress
+    columns:
+      - name: level_end_of_day
+        tests:
+          - not_null
+          - accepted_values:
+              values: [1, 2, 3]
+              quote: false

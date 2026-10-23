@@ -204,10 +204,10 @@ Notes:
 
 ### 7.2 Next exercise (reads dbt marts)
 
-1. Review first: an exercise failed or solved with 1 star at least 3 days ago returns as a new variant.
-2. Otherwise the weakest topic: lowest level, ties broken by least recently practiced.
+1. Review first: an exercise returns when its latest counted session (solved, gave up, or expired after a check) was a fail or a 1-star solve that ended at least 72 hours ago. The oldest due exercise goes first. A later solve with 2 or more stars takes it out of the queue. It returns as a new variant: the first of up to 20 random seeds whose variant values differ from the last session's.
+2. Otherwise the weakest topic: lowest level, ties broken by least recently practiced (never practiced first), then by topic name.
 3. Within the topic: difficulty closest to the topic level, unseen first, then least recently attempted.
-4. Never the same exercise twice in a row.
+4. Never the same exercise twice in a row. This rule wins over rule 1.
 
 ### 7.3 Calibration
 
@@ -300,20 +300,24 @@ Migrations are versioned SQL files in `internal/store/migrations`, applied on st
 
 | Layer | Model | Purpose |
 |---|---|---|
-| staging | stg_events, stg_sessions | Typed, cleaned source data |
+| staging | stg_events, stg_sessions, stg_exercises | Typed, cleaned source data |
 | intermediate | int_session_outcomes | One row per finished session: outcome, stars, hints, checks, duration |
-| marts | mart_topic_levels | Current level per topic, from level_changed events |
-| marts | mart_review_queue | Exercises due for review |
+| marts | mart_topic_levels | Current level per learner and topic, from level_changed events, and when the topic was last practiced |
+| marts | mart_review_queue | Review candidates per learner (rule 1 of section 7.2), with the time each is due |
 | marts | mart_exercise_stats | Solve rate, hint use, duration, calibration flag |
-| marts | mart_progress | Per-topic history for the dashboard |
+| marts | mart_progress | Per learner, topic and day: sessions, solves, average stars, level at the end of the day |
 
-Tests: unique and not-null keys, accepted values for event types and outcomes, relationships between sessions and events.
+dbt reads the source tables in schema `public` and writes every model to schema `analytics`, so a build never touches the engine's tables. Outcomes in `int_session_outcomes` are `solved`, `gave_up`, `expired_fail` (expired after a check), `expired_skip` (expired with no check) and `voided`. Only the first three count in the statistics and the review queue. The engine stays the authority for levels (section 7.1). `mart_topic_levels` replays its `level_changed` events, and a test asserts that the two agree.
+
+Tests: unique and not-null keys, accepted values for event types, statuses and outcomes, relationships between sessions and events. Singular tests assert one level row per learner and topic, and one review row per learner and exercise.
+
+The project lives in `dbt/`. `internal/dbt` runs `dbt build` in the pinned `dbt-postgres` image with `docker run`. The container joins the compose network and reaches Postgres by service name. It runs with no capabilities, a read-only root filesystem, the project mounted read-only, and targets and logs in `/tmp`. The connection comes from the engine's database URL, and the password reaches the container only through its environment. dbt runs only against the compose Postgres, never over the host network.
 
 ### 9.3 When dbt runs
 
-- v1: after each finished session, and on `rootcause stats --refresh`.
+- v1: after each solve and give up (after the result is shown, with a 120-second limit), on `rootcause stats --refresh`, and in `rootcause next` when the marts are stale. Expiry by the reaper does not run dbt; the next `rootcause next` catches up.
 - v2: an on-demand Job after each session, plus a CronJob every 15 minutes as backstop.
-- If marts are missing or stale, the selector falls back to topic levels alone.
+- The marts are stale when they are missing, or when the learner's latest finished session is newer than the latest one in `int_session_outcomes`. `rootcause next` then rebuilds them once. If they are still stale, or dbt fails, the selector falls back to topic levels alone: rules 2 to 4 of section 7.2 from the engine's levels and the source tables, without the review queue. A failed build never changes a session's result.
 
 ## 10. CLI (v1)
 
@@ -330,6 +334,7 @@ Tests: unique and not-null keys, accepted values for event types and outcomes, r
 | `rootcause giveup` | Ends the session and shows the walkthrough (after hint 3) |
 | `rootcause status` | Topic levels, active session, review queue |
 | `rootcause list` | All exercises with best stars |
+| `rootcause stats [--refresh]` | Statistics per exercise from the marts, with calibration flags. `--refresh` rebuilds the marts first |
 | `rootcause serve` | Starts the local dashboard |
 | `rootcause lang en\|no` | Sets the interface language |
 
@@ -372,6 +377,7 @@ Tests: unique and not-null keys, accepted values for event types and outcomes, r
 - Checks run inside the sandbox, where the learner is root. A determined learner could replace a tool the check uses, such as `curl` or `nginx`, and fake a pass. This is acceptable for a single-user practice tool. Exercises where it matters use `runs_from: runner`.
 - `check.before: restart` restarts the container. Files stay, but only PID 1 starts again: processes that setup.sh started are gone, and setup.sh does not run again. An exercise that needs services started at boot uses `init: systemd`.
 - In `init: systemd` sandboxes, journald and tmp.mount are masked, because they need capabilities outside the allowlist. Service output is not kept in a journal.
+- `init: systemd` exercises need a host with cgroup v2 (the WSL2 default). The systemd in the exercise images does not boot on cgroup v1, so the CLI and the selftest refuse such an exercise there with a clear error.
 - Sandboxes on the internal network can reach each other. With one learner and at most two sandboxes, this is accepted.
 
 ## 14. CI/CD
@@ -524,6 +530,7 @@ RootCause/
 │   ├── session/              lifecycle, reaper
 │   ├── grading/              stars, level rule
 │   ├── selector/             next-exercise logic
+│   ├── dbt/                  runs the dbt project in a container
 │   ├── store/                Postgres access, migrations
 │   ├── server/               HTTP API, embeds web/dist
 │   └── i18n/
@@ -531,7 +538,7 @@ RootCause/
 ├── exercises/<id>/
 ├── dbt/
 ├── deploy/
-│   ├── compose/              v1: Postgres, dbt
+│   ├── compose/              v1: Postgres (dbt runs with docker run, see 9.2)
 │   └── k8s/                  v2: manifests
 ├── locales/                  en.json, no.json
 ├── scripts/                  validate-exercise.sh

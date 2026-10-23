@@ -1,0 +1,10 @@
+version: 2
+
+sources:
+  - name: engine
+    description: Source tables written by the engine (spec section 9.1).
+    schema: public
+    tables:
+      - name: session
+      - name: event
+      - name: exercise

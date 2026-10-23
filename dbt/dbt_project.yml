@@ -1,0 +1,19 @@
+# RootCause analytics (spec section 9.2). dbt reads the engine's source tables
+# in schema public and writes every model to schema analytics, so a build never
+# touches the engine's own tables.
+name: rootcause
+version: "1.0.0"
+config-version: 2
+profile: rootcause
+
+model-paths: ["models"]
+test-paths: ["tests"]
+
+models:
+  rootcause:
+    staging:
+      +materialized: view
+    intermediate:
+      +materialized: table
+    marts:
+      +materialized: table

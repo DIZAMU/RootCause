@@ -1,0 +1,15 @@
+# Connection for the dbt container. Every value comes from the environment
+# that internal/dbt passes to the container; the password is never written to
+# a file.
+rootcause:
+  target: default
+  outputs:
+    default:
+      type: postgres
+      host: "{{ env_var('DBT_HOST') }}"
+      port: "{{ env_var('DBT_PORT') | int }}"
+      user: "{{ env_var('DBT_USER') }}"
+      password: "{{ env_var('DBT_PASSWORD') }}"
+      dbname: "{{ env_var('DBT_DBNAME') }}"
+      schema: analytics
+      threads: 2

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DIZAMU/RootCause/internal/exercise"
 	"github.com/DIZAMU/RootCause/internal/runtime"
@@ -150,5 +151,55 @@ func TestAssertNoTrace(t *testing.T) {
 				t.Errorf("err = %v, want one mentioning %s", err, c.want)
 			}
 		})
+	}
+}
+
+// cgroupV1Runtime is a scripted runtime on a host that cannot boot systemd.
+type cgroupV1Runtime struct{ scriptedRuntime }
+
+func (cgroupV1Runtime) CheckSystemd(context.Context) error { return runtime.ErrNeedsCgroupV2 }
+
+// TestSystemdNeedsCgroupV2 checks that an init: systemd exercise is refused
+// with ErrNeedsCgroupV2 on a cgroup v1 host, by Start and by the selftest,
+// before anything is built, stored or created.
+func TestSystemdNeedsCgroupV2(t *testing.T) {
+	rt := &cgroupV1Runtime{}
+	exDir, _ := filepath.Abs("../../exercises")
+	e := &Engine{rt: rt, exDir: exDir} // no store and no builder: neither may be reached
+
+	if _, err := e.Start(context.Background(), 1, "svc-02-dies-on-reboot", 1); !errors.Is(err, runtime.ErrNeedsCgroupV2) {
+		t.Errorf("Start: err = %v, want ErrNeedsCgroupV2", err)
+	}
+	err := SelfTest(context.Background(), rt, nil, filepath.Join(exDir, "svc-02-dies-on-reboot"), 1, io.Discard)
+	if !errors.Is(err, runtime.ErrNeedsCgroupV2) {
+		t.Errorf("SelfTest: err = %v, want ErrNeedsCgroupV2", err)
+	}
+	if len(rt.created) != 0 {
+		t.Errorf("created %d sandboxes, want none", len(rt.created))
+	}
+}
+
+// diagnosingRuntime is a scripted runtime that can describe a sandbox.
+type diagnosingRuntime struct{ scriptedRuntime }
+
+func (diagnosingRuntime) Diagnose(context.Context, string) string {
+	return "status exited, exit code 255; no log output"
+}
+
+// TestNotReadyDiagnoses checks that a readiness timeout names the sandbox's
+// state, for plain and systemd sandboxes.
+func TestNotReadyDiagnoses(t *testing.T) {
+	rt := &diagnosingRuntime{scriptedRuntime{exec: func(string, []string) (runtime.ExecResult, error) {
+		return runtime.ExecResult{}, errors.New("container is not running")
+	}}}
+	e := &Engine{rt: rt}
+	for _, init := range []string{"none", "systemd"} {
+		ex := fixture(t, func(ex *exercise.Exercise) { ex.Init = init })
+		ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+		err := e.waitReady(ctx, ex, "id", true)
+		cancel()
+		if err == nil || !strings.Contains(err.Error(), "exit code 255") {
+			t.Errorf("init %s: err = %v, want one with the diagnosis", init, err)
+		}
 	}
 }

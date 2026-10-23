@@ -14,6 +14,9 @@ RootCause runs in WSL2 or Linux with Docker Engine and Go. Each exercise runs in
 2. Check that `docker info --format '{{json .SecurityOptions}}'` shows `name=userns`.
 3. Copy `deploy/compose/.env.example` to `deploy/compose/.env` and set a password.
 4. Run `go run ./cmd/rootcause init`, then `go run ./cmd/rootcause list`.
+5. Run `go run ./cmd/rootcause next` to start the recommended exercise. Statistics are built with dbt in a container (the first run pulls the image).
+
+Exercises that boot systemd (such as svc-02) need a host with cgroup v2. WSL2 uses cgroup v2 by default. Check with `docker info --format '{{.CgroupVersion}}'`, which must print `2`.
 
 ## License
 

@@ -4,6 +4,7 @@ import (
 	"errors"
 
 	"github.com/DIZAMU/RootCause/internal/i18n"
+	"github.com/DIZAMU/RootCause/internal/runtime"
 	"github.com/DIZAMU/RootCause/internal/session"
 )
 
@@ -50,6 +51,8 @@ func Message(b *i18n.Bundle, lang string, err error) string {
 		return b.T(lang, "giveup.locked", nil)
 	case errors.Is(err, session.ErrNoShell):
 		return b.T(lang, "error.no_shell", nil)
+	case errors.Is(err, runtime.ErrNeedsCgroupV2):
+		return b.T(lang, "error.cgroup_v2_required", nil)
 	default:
 		return b.T(lang, "error.generic", map[string]string{"detail": err.Error()})
 	}

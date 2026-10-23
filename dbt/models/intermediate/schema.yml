@@ -1,0 +1,28 @@
+version: 2
+
+models:
+  - name: int_session_outcomes
+    columns:
+      - name: session_id
+        tests:
+          - unique
+          - not_null
+          - relationships:
+              to: ref('stg_sessions')
+              field: session_id
+      - name: learner_id
+        tests: [not_null]
+      - name: topic
+        tests: [not_null]
+      - name: ended_at
+        tests: [not_null]
+      - name: outcome
+        tests:
+          - not_null
+          - accepted_values:
+              values: [solved, gave_up, expired_fail, expired_skip, voided]
+      - name: kind
+        tests:
+          - not_null
+          - accepted_values:
+              values: [strong, weak, fail, skip]
