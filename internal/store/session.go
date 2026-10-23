@@ -236,3 +236,42 @@ func (s *Store) EndSession(ctx context.Context, id, status string, stars *int) e
 		status, stars, id)
 	return err
 }
+
+// HistoryItem is one finished session, as the dashboard's history lists it.
+type HistoryItem struct {
+	SessionID     string
+	ExerciseID    string
+	Status        string // solved | gave_up | expired | voided
+	Stars         *int
+	HintsRevealed int
+	Checks        int // how many checks ran
+	StartedAt     time.Time
+	EndedAt       *time.Time
+}
+
+// History returns the learner's finished sessions, newest first, at most
+// limit of them.
+func (s *Store) History(ctx context.Context, learnerID, limit int) ([]HistoryItem, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT s.id, s.exercise_id, s.status, s.stars, s.hints_revealed,
+		       (SELECT count(*) FROM event e WHERE e.session_id = s.id AND e.type = 'check_run'),
+		       s.started_at, s.ended_at
+		FROM session s
+		WHERE s.learner_id = $1 AND s.status <> 'active'
+		ORDER BY s.ended_at DESC NULLS LAST, s.started_at DESC, s.id DESC
+		LIMIT $2`, learnerID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("history: %w", err)
+	}
+	defer rows.Close()
+	var out []HistoryItem
+	for rows.Next() {
+		var h HistoryItem
+		if err := rows.Scan(&h.SessionID, &h.ExerciseID, &h.Status, &h.Stars, &h.HintsRevealed,
+			&h.Checks, &h.StartedAt, &h.EndedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, h)
+	}
+	return out, rows.Err()
+}

@@ -63,3 +63,15 @@ func (s *Store) SetLang(ctx context.Context, learnerID int, lang string) error {
 	}
 	return nil
 }
+
+// LearnerByID returns one learner. The dashboard server reads the learner on
+// every request, so a language set from the CLI shows up without a restart.
+func (s *Store) LearnerByID(ctx context.Context, id int) (Learner, error) {
+	var l Learner
+	err := s.pool.QueryRow(ctx, `SELECT id, name, lang FROM learner WHERE id = $1`, id).
+		Scan(&l.ID, &l.Name, &l.Lang)
+	if err != nil {
+		return Learner{}, fmt.Errorf("read learner %d: %w", id, err)
+	}
+	return l, nil
+}

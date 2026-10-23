@@ -204,3 +204,31 @@ func (s *Store) AttemptHistory(ctx context.Context, learnerID int) (map[string]t
 	}
 	return last, previous, nil
 }
+
+// statsLockKey names the Postgres advisory lock held while dbt rebuilds the
+// marts, so the CLI and the dashboard server never run two builds at once.
+const statsLockKey int64 = 7300_0003
+
+// WithStatsLock runs build while holding the stats advisory lock. A second
+// caller, in this process or another, waits until the first build is done.
+// If ctx ends while it waits, it returns ctx's error and build does not run.
+func (s *Store) WithStatsLock(ctx context.Context, build func() error) error {
+	// An advisory lock belongs to one database connection, so the lock and
+	// the unlock run on the same connection taken from the pool.
+	conn, err := s.pool.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("acquire connection: %w", err)
+	}
+	defer conn.Release()
+	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock($1)`, statsLockKey); err != nil {
+		return fmt.Errorf("lock stats: %w", err)
+	}
+	defer func() {
+		// If the unlock fails, close the connection: that releases the lock,
+		// and the pool will not hand out a connection that still holds it.
+		if _, err := conn.Exec(context.Background(), `SELECT pg_advisory_unlock($1)`, statsLockKey); err != nil {
+			_ = conn.Conn().Close(context.Background())
+		}
+	}()
+	return build()
+}

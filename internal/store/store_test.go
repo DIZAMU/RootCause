@@ -113,3 +113,39 @@ func TestTestDSNRefusesRealDatabase(t *testing.T) {
 		}
 	}
 }
+
+// TestWithStatsLock: two builds, here from two stores as from the CLI and the
+// dashboard, never run at the same time, and a caller whose context ends
+// while it waits does not run its build.
+func TestWithStatsLock(t *testing.T) {
+	a := openOrSkip(t)
+	b := openOrSkip(t)
+	ctx := context.Background()
+
+	inA := make(chan struct{})
+	releaseA := make(chan struct{})
+	doneA := make(chan error, 1)
+	go func() {
+		doneA <- a.WithStatsLock(ctx, func() error {
+			close(inA)
+			<-releaseA
+			return nil
+		})
+	}()
+	<-inA
+
+	waitCtx, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
+	defer cancel()
+	ran := false
+	if err := b.WithStatsLock(waitCtx, func() error { ran = true; return nil }); err == nil || ran {
+		t.Errorf("second build ran while the first held the lock: err=%v ran=%v", err, ran)
+	}
+
+	close(releaseA)
+	if err := <-doneA; err != nil {
+		t.Fatal(err)
+	}
+	if err := b.WithStatsLock(ctx, func() error { ran = true; return nil }); err != nil || !ran {
+		t.Errorf("build after release: err=%v ran=%v", err, ran)
+	}
+}
