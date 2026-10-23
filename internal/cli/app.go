@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/DIZAMU/RootCause/internal/exercise"
 	"github.com/DIZAMU/RootCause/internal/i18n"
+	"github.com/DIZAMU/RootCause/internal/play"
 	"github.com/DIZAMU/RootCause/internal/runtime/docker"
 	"github.com/DIZAMU/RootCause/internal/session"
 	"github.com/DIZAMU/RootCause/internal/store"
@@ -275,26 +275,13 @@ func syncExercises(ctx context.Context, st *store.Store, root string) error {
 	return st.SyncExercises(ctx, rows)
 }
 
+// loadAllExercises loads the catalog from the exercises folder.
 func loadAllExercises(root string) ([]store.ExerciseRow, error) {
-	exRoot := filepath.Join(root, "exercises")
-	entries, err := os.ReadDir(exRoot)
-	if err != nil {
+	rows, err := play.Catalog(filepath.Join(root, "exercises"))
+	if errors.Is(err, play.ErrNoExercises) {
 		return nil, fail("error.no_exercises", err)
 	}
-	var rows []store.ExerciseRow
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		ex, err := exercise.Load(filepath.Join(exRoot, e.Name()))
-		if err != nil {
-			return nil, err
-		}
-		rows = append(rows, store.ExerciseRow{
-			ID: ex.ID, Version: ex.Version, Topic: ex.Topic, Difficulty: ex.Difficulty,
-		})
-	}
-	return rows, nil
+	return rows, err
 }
 
 func fileExists(path string) bool {

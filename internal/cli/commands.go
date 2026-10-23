@@ -11,12 +11,10 @@ import (
 
 	"github.com/DIZAMU/RootCause/internal/exercise"
 	"github.com/DIZAMU/RootCause/internal/i18n"
+	"github.com/DIZAMU/RootCause/internal/play"
 	"github.com/DIZAMU/RootCause/internal/session"
 	"github.com/DIZAMU/RootCause/internal/store"
 )
-
-// topics is the fixed v1 topic set (spec section 4.2), in display order.
-var topics = []string{"permissions", "services", "logs", "networking", "disk"}
 
 // Start begins a specific exercise (spec section 10: rootcause start <id>).
 func (a *App) Start(ctx context.Context, args []string) error {
@@ -105,7 +103,7 @@ func (a *App) Hint(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	text := i18n.Fill(texts.Hints[tier-1], textVars(sess))
+	text := i18n.Fill(texts.Hints[tier-1], play.TextVars(sess))
 	a.say("hint.revealed", map[string]string{"tier": fmt.Sprint(tier), "text": text})
 	return nil
 }
@@ -128,7 +126,7 @@ func (a *App) Check(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	vars := textVars(sess)
+	vars := play.TextVars(sess)
 	switch {
 	case res.Infra:
 		a.say("check.infra", nil)
@@ -140,19 +138,13 @@ func (a *App) Check(ctx context.Context) error {
 		}
 		a.refreshAfterSession(ctx)
 	default:
-		if fb := feedbackText(texts, res.Feedback, vars); fb != "" {
+		if fb := play.FeedbackText(texts, res.Feedback, vars); fb != "" {
 			a.say("check.fail", map[string]string{"feedback": fb})
 		} else {
 			a.say("check.fail_generic", nil)
 		}
 	}
 	return nil
-}
-
-// feedbackText returns the exercise's symptom text for a check's feedback key,
-// with placeholders filled, or "" if the exercise has no text for that key.
-func feedbackText(texts *exercise.I18n, key string, vars map[string]string) string {
-	return strings.TrimSpace(i18n.Fill(texts.Feedback[key], vars))
 }
 
 // Reset gives a fresh copy of the same variant.
@@ -195,7 +187,7 @@ func (a *App) GiveUp(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	a.printWalkthrough(texts, textVars(sess))
+	a.printWalkthrough(texts, play.TextVars(sess))
 	if lc != nil {
 		a.announceLevel(lc)
 	}
@@ -254,7 +246,7 @@ func (a *App) printReviewQueue(ctx context.Context) error {
 // computed from the finished outcomes.
 func (a *App) printLevels(ctx context.Context) error {
 	a.say("status.levels_header", nil)
-	for _, topic := range topics {
+	for _, topic := range play.Topics {
 		level, err := a.eng.TopicLevel(ctx, a.learner.ID, topic)
 		if err != nil {
 			return err
@@ -323,12 +315,12 @@ func (a *App) active(ctx context.Context) (store.Session, bool, error) {
 }
 
 func (a *App) exerciseTexts(sess store.Session) (*exercise.I18n, error) {
-	ex, err := exercise.Load(filepath.Join(a.root, "exercises", sess.ExerciseID))
-	if err != nil {
-		return nil, err
-	}
-	return ex.LoadI18n(a.lang())
+	texts, _, err := play.Texts(a.exercisesDir(), sess, a.lang())
+	return texts, err
 }
+
+// exercisesDir is the folder holding the exercise folders.
+func (a *App) exercisesDir() string { return filepath.Join(a.root, "exercises") }
 
 func (a *App) printTicket(sess store.Session) {
 	texts, err := a.exerciseTexts(sess)
@@ -336,7 +328,7 @@ func (a *App) printTicket(sess store.Session) {
 		fmt.Fprintln(a.out, a.Describe(err))
 		return
 	}
-	vars := textVars(sess)
+	vars := play.TextVars(sess)
 	fmt.Fprintln(a.out)
 	a.say("ticket.title", map[string]string{"title": i18n.Fill(texts.Ticket.Title, vars)})
 	a.say("ticket.from", map[string]string{"from": i18n.Fill(texts.Ticket.From, vars)})
@@ -347,18 +339,6 @@ func (a *App) printWalkthrough(texts *exercise.I18n, vars map[string]string) {
 	fmt.Fprintln(a.out)
 	a.say("walkthrough.header", nil)
 	fmt.Fprintln(a.out, i18n.Fill(texts.Walkthrough, vars))
-}
-
-// textVars collects variant and derived values for placeholder filling.
-func textVars(sess store.Session) map[string]string {
-	m := make(map[string]string)
-	for k, v := range sess.VariantValues {
-		m[k] = v
-	}
-	for k, v := range sess.DerivedValues {
-		m[k] = fmt.Sprint(v)
-	}
-	return m
 }
 
 // starGlyphs renders best stars as filled/empty marks, or "---" if never solved.
