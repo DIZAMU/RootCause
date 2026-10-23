@@ -88,3 +88,16 @@ func Fill(template string, vars map[string]string) string {
 	}
 	return strings.NewReplacer(pairs...).Replace(template)
 }
+
+// Strings returns a copy of every message in lang, unfilled. Keys missing in
+// lang fall back to English, as in T. The dashboard fills placeholders itself.
+func (b *Bundle) Strings(lang string) map[string]string {
+	out := make(map[string]string, len(b.msgs["en"]))
+	for k, v := range b.msgs["en"] {
+		out[k] = v
+	}
+	for k, v := range b.msgs[lang] {
+		out[k] = v
+	}
+	return out
+}
