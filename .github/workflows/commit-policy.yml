@@ -1,0 +1,32 @@
+# Commit policy (spec sections 14 and 15): every commit in a pull request has
+# no Co-authored-by trailer or tool attribution line, the owner's author and
+# committer email, and a signature GitHub verifies.
+name: commit-policy
+
+on:
+  pull_request:
+
+permissions: {}
+
+concurrency:
+  group: commit-policy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  commit-policy:
+    name: commit-policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read # git history, and the commits API for signature status
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: check every commit in the pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: scripts/check-commit-policy.sh --signatures api "$BASE" "$HEAD"

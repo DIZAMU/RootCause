@@ -2,25 +2,32 @@ package store
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 )
 
-// openOrSkip connects to the test database, or skips if none is configured.
-// The store is closed by t.Cleanup. Cleanups run in reverse order, so this
-// one runs after every cleanup the test registers later, which still need the
-// connection. (A deferred Close would run before them.)
+// openOrSkip connects to the test database. It skips only when
+// RC_TEST_DATABASE_URL is unset, and fails when it is set but unsafe or
+// unreachable (the rule internal/testenv applies to the other packages, which
+// this package's tests cannot import). The store is closed by t.Cleanup.
+// Cleanups run in reverse order, so this one runs after every cleanup the test
+// registers later, which still need the connection. (A deferred Close would
+// run before them.)
 func openOrSkip(t *testing.T) *Store {
 	t.Helper()
-	dsn := TestDSN()
+	dsn, err := TestDSN()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if dsn == "" {
-		t.Skip("RC_TEST_DATABASE_URL not set to a database ending in _test; skipping")
+		t.Skip("RC_TEST_DATABASE_URL not set")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	s, err := Open(ctx, dsn)
 	if err != nil {
-		t.Skip("database not reachable:", err)
+		t.Fatalf("test database not reachable: %v", err)
 	}
 	t.Cleanup(s.Close)
 	return s
@@ -102,15 +109,19 @@ func TestMigrateAndSync(t *testing.T) {
 
 func TestTestDSNRefusesRealDatabase(t *testing.T) {
 	cases := map[string]string{
-		"postgres://u:p@127.0.0.1:5432/rootcause?sslmode=disable":      "",
+		"": "",
 		"postgres://u:p@127.0.0.1:5432/rootcause_test?sslmode=disable": "postgres://u:p@127.0.0.1:5432/rootcause_test?sslmode=disable",
 		"postgres://u:p@127.0.0.1:5432/rootcause_test":                 "postgres://u:p@127.0.0.1:5432/rootcause_test",
 	}
 	for dsn, want := range cases {
 		t.Setenv("RC_TEST_DATABASE_URL", dsn)
-		if got := TestDSN(); got != want {
-			t.Errorf("TestDSN(%q) = %q, want %q", dsn, got, want)
+		if got, err := TestDSN(); got != want || err != nil {
+			t.Errorf("TestDSN(%q) = %q, %v; want %q, nil", dsn, got, err, want)
 		}
+	}
+	t.Setenv("RC_TEST_DATABASE_URL", "postgres://u:p@127.0.0.1:5432/rootcause?sslmode=disable")
+	if got, err := TestDSN(); got != "" || !errors.Is(err, ErrUnsafeTestDSN) {
+		t.Errorf("TestDSN(real database) = %q, %v; want ErrUnsafeTestDSN", got, err)
 	}
 }
 

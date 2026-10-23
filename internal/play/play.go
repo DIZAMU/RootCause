@@ -103,8 +103,8 @@ func Seed(exercisesDir string, pick selector.Pick, random func() int64) (int64, 
 
 // BuildStats rebuilds the marts with dbt (spec section 9.3) while holding the
 // store's stats lock, so the CLI and the dashboard never build at once.
-func BuildStats(ctx context.Context, st *store.Store, projectDir, dsn string) error {
-	return st.WithStatsLock(ctx, func() error { return dbt.Build(ctx, projectDir, dsn) })
+func BuildStats(ctx context.Context, st *store.Store, dsn string) error {
+	return st.WithStatsLock(ctx, func() error { return dbt.Build(ctx, dsn) })
 }
 
 // ErrNoExercises means the exercises folder cannot be read.

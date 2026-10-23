@@ -20,4 +20,11 @@ if grep -qiE '^[^[:alnum:]]*Generated with' "$msg_file"; then
     exit 1
 fi
 
+# Reject session trailers and links that coding assistants append, such as
+# "Claude-Session: https://claude.ai/code/session_...".
+if grep -qiE '^[[:space:]]*Claude-Session:|claude\.ai/code/session' "$msg_file"; then
+    echo "commit-msg: rejected -- a coding-assistant session line is not allowed in this repo." >&2
+    exit 1
+fi
+
 exit 0

@@ -12,18 +12,18 @@ import (
 	"time"
 
 	"github.com/DIZAMU/RootCause/internal/runtime"
+	"github.com/DIZAMU/RootCause/internal/testenv"
 )
 
 // newOrSkip returns a Docker runtime, or skips the test if docker is not
-// usable here (e.g. CI without a daemon). These are integration tests.
+// usable here. With RC_REQUIRE_DOCKER=1 (CI) that fails the test instead.
+// These are integration tests.
 func newOrSkip(t *testing.T) *Runtime {
 	t.Helper()
+	testenv.Docker(t)
 	r, err := New()
 	if err != nil {
-		t.Skip("docker CLI not available:", err)
-	}
-	if err := exec.Command("docker", "info").Run(); err != nil {
-		t.Skip("docker daemon not reachable:", err)
+		testenv.NoDocker(t, "docker runtime:", err)
 	}
 	return r
 }

@@ -1,0 +1,109 @@
+# CI for every pull request and every push to main (spec section 14).
+# A push to a PR branch already runs through pull_request, so pushes to other
+# branches are left out to save Actions minutes.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # CI tool, not a Go dependency: installed with go install at this version,
+  # which verifies every module against the Go checksum database.
+  GOLANGCI_LINT_VERSION: v2.15.0
+
+jobs:
+  checks:
+    name: ci-checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: web/.nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: gofmt
+        run: |
+          out="$(gofmt -l .)"
+          if [ -n "$out" ]; then echo "not gofmt-formatted:"; echo "$out"; exit 1; fi
+      - name: frontend type check and build
+        run: scripts/build-web.sh
+      - name: go vet
+        run: |
+          go vet ./...
+          go vet -tags webdist ./...
+      - name: golangci-lint
+        run: |
+          go install "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@${GOLANGCI_LINT_VERSION}"
+          golangci-lint run ./...
+          golangci-lint run --build-tags webdist ./...
+      - name: shellcheck
+        run: |
+          shellcheck --version
+          shellcheck scripts/*.sh .githooks/commit-msg exercises/*/*.sh
+      - name: commit-msg hook cases
+        run: bash scripts/test-commit-msg.sh
+      - name: i18n key parity
+        run: |
+          go test -count=1 -run 'TestLocaleParity' ./internal/i18n/
+          for d in exercises/*/; do go run ./cmd/rootcause validate "$d"; done
+
+  test:
+    name: ci-test
+    runs-on: ubuntu-24.04 # cgroup v2, which the init: systemd exercises need
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # origin/main, for the no-test-files check
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: web/.nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: build the dashboard for -tags webdist
+        run: scripts/build-web.sh
+      # Before any container starts: the restart switches Docker's storage.
+      - name: enable Docker userns-remap
+        run: sudo scripts/ci-enable-userns.sh
+      - name: start Postgres with rootcause init
+        run: |
+          pw="$(openssl rand -hex 24)"
+          echo "::add-mask::$pw"
+          printf 'POSTGRES_USER=rootcause\nPOSTGRES_DB=rootcause\nPOSTGRES_PASSWORD=%s\n' "$pw" > deploy/compose/.env
+          go run ./cmd/rootcause init
+          docker exec rootcause-postgres-1 createdb -U rootcause rootcause_test
+          echo "RC_TEST_DATABASE_URL=postgres://rootcause:${pw}@127.0.0.1:5432/rootcause_test?sslmode=disable" >> "$GITHUB_ENV"
+      - name: go test (fails on any skip)
+        env:
+          RC_REQUIRE_DOCKER: "1"
+        run: >-
+          scripts/ci-go-test.sh
+          --require TestScriptedSelection
+          --require TestBuildRecoversFromKilledEngine
+          --require TestPlaySvc01
+          -tags webdist ./...
