@@ -25,6 +25,9 @@ expect reject $'feat: x\n\nCo-authored-by: Someone <a@b.c>'
 expect reject $'feat: x\n\n  co-authored-by: someone <a@b.c>'
 expect reject $'feat: x\n\nGenerated with some tool'
 expect reject $'feat: x\n\n\xf0\x9f\xa4\x96 Generated with [Some Tool](https://example.com)'
+expect reject $'feat: x\n\nClaude-Session: https://claude.ai/code/session_0123'
+expect reject $'feat: x\n\nSee https://claude.ai/code/session_0123'
+expect accept $'docs: explain sessions\n\nA session is one attempt at one variant.'
 
 if [ "$failures" -gt 0 ]; then
     echo "$failures case(s) failed"
