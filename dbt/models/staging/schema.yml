@@ -1,0 +1,52 @@
+version: 2
+
+models:
+  - name: stg_sessions
+    columns:
+      - name: session_id
+        tests: [unique, not_null]
+      - name: learner_id
+        tests: [not_null]
+      - name: exercise_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('stg_exercises')
+              field: exercise_id
+      - name: difficulty
+        tests:
+          - not_null
+          - accepted_values:
+              values: [1, 2, 3]
+              quote: false
+      - name: status
+        tests:
+          - not_null
+          - accepted_values:
+              values: [active, solved, gave_up, expired, voided]
+
+  - name: stg_events
+    columns:
+      - name: event_id
+        tests: [unique, not_null]
+      - name: session_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('stg_sessions')
+              field: session_id
+      - name: event_type
+        tests:
+          - not_null
+          - accepted_values:
+              values: [session_started, hint_revealed, check_run, reset, gave_up, solved, expired, voided, level_changed]
+
+  - name: stg_exercises
+    columns:
+      - name: exercise_id
+        tests: [unique, not_null]
+      - name: topic
+        tests:
+          - not_null
+          - accepted_values:
+              values: [permissions, services, logs, networking, disk]

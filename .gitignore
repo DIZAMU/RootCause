@@ -5,3 +5,7 @@
 /bin/
 # Go test binaries.
 *.test
+# dbt output. The container writes it to /tmp, so these exist only after a
+# dbt run on the host.
+/dbt/target/
+/dbt/logs/
