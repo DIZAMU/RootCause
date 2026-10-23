@@ -315,7 +315,7 @@ The project lives in `dbt/`. `internal/dbt` runs `dbt build` in the pinned `dbt-
 
 ### 9.3 When dbt runs
 
-- v1: after each solve and give up (after the result is shown, with a 120-second limit), on `rootcause stats --refresh`, and in `rootcause next` when the marts are stale. Expiry by the reaper does not run dbt; the next `rootcause next` catches up.
+- v1: after each solve and give up (after the result is shown, with a 120-second limit), on `rootcause stats --refresh`, and in `rootcause next` when the marts are stale. Expiry by the reaper does not run dbt; the next `rootcause next` catches up. In the dashboard, a solve or give up returns at once and dbt runs in the background, as does a rebuild when the home view finds the marts stale; starting the recommended exercise from the dashboard rebuilds stale marts first, like `rootcause next`. A Postgres advisory lock lets only one build run at a time, across the CLI and the dashboard.
 - v2: an on-demand Job after each session, plus a CronJob every 15 minutes as backstop.
 - The marts are stale when they are missing, or when the learner's latest finished session is newer than the latest one in `int_session_outcomes`. `rootcause next` then rebuilds them once. If they are still stale, or dbt fails, the selector falls back to topic levels alone: rules 2 to 4 of section 7.2 from the engine's levels and the source tables, without the review queue. A failed build never changes a session's result.
 
@@ -335,7 +335,7 @@ The project lives in `dbt/`. `internal/dbt` runs `dbt build` in the pinned `dbt-
 | `rootcause status` | Topic levels, active session, review queue |
 | `rootcause list` | All exercises with best stars |
 | `rootcause stats [--refresh]` | Statistics per exercise from the marts, with calibration flags. `--refresh` rebuilds the marts first |
-| `rootcause serve` | Starts the local dashboard |
+| `rootcause serve [--port N]` | Starts the local dashboard on 127.0.0.1, port 7300 by default, until Ctrl-C. Reaps expired sessions every minute while it runs |
 | `rootcause lang en\|no` | Sets the interface language |
 
 ## 11. Dashboard (v1)
@@ -344,8 +344,16 @@ The project lives in `dbt/`. `internal/dbt` runs `dbt build` in the pinned `dbt-
 - Exercise view: ticket, hint buttons, check, reset, give up, result and walkthrough. Shows the `rootcause shell` command (v2 embeds the terminal).
 - History: past sessions with stars and outcome.
 - Exercise list with best stars per exercise.
-- EN/NO toggle.
+- EN/NO toggle. It sets the profile language, the same one `rootcause lang` sets.
 - Own visual identity, light and dark mode, desktop-first.
+
+Implementation:
+
+- The app (Vite, React, TypeScript, plain CSS, hash routing) lives in `web/`. `scripts/build-web.sh` builds it into `web/dist` with `npm ci` from the committed lockfile. `go build -tags webdist` embeds it. Without the tag, `/` serves a translated page that says how to build it.
+- `internal/server` is a JSON API over the same engine, selector and store as the CLI. Both front ends call the shared steps in `internal/play` (next pick and seed, exercise texts, statistics rebuild). Exercise texts are filled server-side in the learner's language. UI strings come from `locales/*.json` through `/api/i18n/{lang}`, so there is one copy of every string.
+- Endpoints: `GET /api/overview`, `/api/exercises`, `/api/history`, `/api/session` (the active session, 204 if none), `/api/sessions/{id}`, `/api/i18n/{lang}`; `POST /api/start` (`{"exercise": ""}` starts the recommended one), `/api/hint`, `/api/check`, `/api/reset`, `/api/giveup`; `PUT /api/lang`. Actions name the session the page shows and are refused if it is no longer the active one.
+- The dashboard follows the CLI by polling: the open session every 2 seconds, the overview every few seconds and on focus. The two front ends share only the database.
+- The session view never contains the seed, variant values or derived values. Hints appear once revealed, and the walkthrough once the session is solved or given up.
 
 ## 12. Languages
 
@@ -364,6 +372,8 @@ The project lives in `dbt/`. `internal/dbt` runs `dbt build` in the pinned `dbt-
 - Network `none`, or an internal network with no outside route.
 - The learner is root inside the sandbox, so container root must not map to host root: user namespace remapping or rootless Docker (OQ-3).
 - The local server binds to 127.0.0.1 only.
+- It refuses any request whose Host header is not `127.0.0.1:PORT` or `localhost:PORT`, which blocks DNS rebinding.
+- Every `/api` request must carry the header `X-RootCause-Token`, a random token made per server process and written only into the served `index.html`. Another website cannot read that page, so it cannot call the API. The server sends no CORS headers, and every response forbids framing.
 
 ### 13.2 v2 (Kubernetes) adds
 
@@ -526,22 +536,24 @@ RootCause/
 │   ├── exercise/             loader, schema validation
 │   ├── runtime/
 │   │   ├── docker/
-│   │   └── kubernetes/
+│   │   ├── kubernetes/
+│   │   └── scripted/         stand-in runtime for tests
 │   ├── session/              lifecycle, reaper
 │   ├── grading/              stars, level rule
 │   ├── selector/             next-exercise logic
+│   ├── play/                 steps the CLI and the server share
 │   ├── dbt/                  runs the dbt project in a container
 │   ├── store/                Postgres access, migrations
-│   ├── server/               HTTP API, embeds web/dist
+│   ├── server/               HTTP API for the dashboard
 │   └── i18n/
-├── web/                      React + TypeScript (Vite)
+├── web/                      React + TypeScript (Vite); embed.go embeds dist/ with -tags webdist
 ├── exercises/<id>/
 ├── dbt/
 ├── deploy/
 │   ├── compose/              v1: Postgres (dbt runs with docker run, see 9.2)
 │   └── k8s/                  v2: manifests
 ├── locales/                  en.json, no.json
-├── scripts/                  validate-exercise.sh
+├── scripts/                  validate-exercise.sh, build-web.sh
 ├── .githooks/                commit-msg
 ├── .github/workflows/
 ├── docs/
