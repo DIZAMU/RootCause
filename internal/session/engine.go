@@ -75,6 +75,9 @@ func (e *Engine) Start(ctx context.Context, learnerID int, exerciseID string, se
 	if err != nil {
 		return store.Session{}, err
 	}
+	if err := e.checkHost(ctx, ex); err != nil {
+		return store.Session{}, err
+	}
 
 	// Make sure the catalog row exists (FK target for the session).
 	if err := e.st.SyncExercises(ctx, []store.ExerciseRow{
@@ -176,6 +179,33 @@ func (e *Engine) specFor(ex *exercise.Exercise, sessionID string) runtime.Sandbo
 		Init:    ex.Init,
 		Tmpfs:   tmpfs,
 	}
+}
+
+// checkHost refuses an exercise the host cannot run, before anything is
+// built or stored: an init: systemd exercise needs a runtime that confirms
+// systemd can boot. A runtime without that capability is not asked.
+func (e *Engine) checkHost(ctx context.Context, ex *exercise.Exercise) error {
+	if ex.Init != "systemd" {
+		return nil
+	}
+	if sc, ok := e.rt.(runtime.SystemdChecker); ok {
+		return sc.CheckSystemd(ctx)
+	}
+	return nil
+}
+
+// notReady builds a readiness-timeout error. If the runtime can describe the
+// sandbox, the error ends with that description (state, exit code, last log
+// lines). ctx has usually expired by now, so the description gets its own
+// short deadline.
+func (e *Engine) notReady(sandboxID string, msg string) error {
+	d, ok := e.rt.(runtime.Diagnoser)
+	if !ok {
+		return errors.New(msg)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return fmt.Errorf("%s: %s", msg, d.Diagnose(ctx, sandboxID))
 }
 
 // createSandbox creates a sandbox and waits until it is ready for setup.sh,
@@ -352,7 +382,7 @@ func (e *Engine) waitReady(ctx context.Context, ex *exercise.Exercise, sandboxID
 		}
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("sandbox not ready within %s", readyTimeout)
+			return e.notReady(sandboxID, fmt.Sprintf("sandbox not ready within %s", readyTimeout))
 		case <-time.After(100 * time.Millisecond):
 		}
 	}
@@ -384,7 +414,7 @@ func (e *Engine) waitBooted(ctx context.Context, sandboxID string, strict bool) 
 		}
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("sandbox not booted within %s (last state %q)", readyTimeout, state)
+			return e.notReady(sandboxID, fmt.Sprintf("sandbox not booted within %s (last state %q)", readyTimeout, state))
 		case <-time.After(100 * time.Millisecond):
 		}
 	}

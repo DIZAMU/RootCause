@@ -28,6 +28,9 @@ func SelfTest(ctx context.Context, rt runtime.Runtime, builder Builder, exDir st
 		return err
 	}
 	e := &Engine{rt: rt, builder: builder}
+	if err := e.checkHost(ctx, ex); err != nil {
+		return err
+	}
 
 	fmt.Fprintf(log, "== building image %s\n", imageTag(ex))
 	if err := builder.BuildImage(ctx, imageTag(ex), ex.Dir()); err != nil {
