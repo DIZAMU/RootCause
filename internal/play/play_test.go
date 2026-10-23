@@ -1,4 +1,4 @@
-package cli
+package play
 
 import (
 	"testing"
@@ -20,8 +20,8 @@ func TestFeedbackText(t *testing.T) {
 		"blank":            "",
 	}
 	for key, want := range cases {
-		if got := feedbackText(texts, key, vars); got != want {
-			t.Errorf("feedbackText(%q) = %q, want %q", key, got, want)
+		if got := FeedbackText(texts, key, vars); got != want {
+			t.Errorf("FeedbackText(%q) = %q, want %q", key, got, want)
 		}
 	}
 }

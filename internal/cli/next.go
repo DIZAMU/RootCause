@@ -8,8 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/DIZAMU/RootCause/internal/dbt"
-	"github.com/DIZAMU/RootCause/internal/exercise"
+	"github.com/DIZAMU/RootCause/internal/play"
 	"github.com/DIZAMU/RootCause/internal/selector"
 	"github.com/DIZAMU/RootCause/internal/store"
 )
@@ -22,34 +21,24 @@ func (a *App) Next(ctx context.Context) error {
 		a.say("start.active_exists", map[string]string{"exercise": cur.ExerciseID})
 		return nil
 	}
-	rows, err := loadAllExercises(a.root)
+	catalog, err := loadAllExercises(a.root)
 	if err != nil {
 		return err
 	}
-	catalog := make([]selector.Exercise, len(rows))
-	for i, r := range rows {
-		catalog[i] = selector.Exercise{ID: r.ID, Topic: r.Topic, Difficulty: r.Difficulty}
-	}
-
-	loaded, err := selector.Load(ctx, selector.Deps{
+	rec, err := play.Recommend(ctx, selector.Deps{
 		Store: a.st,
 		Level: a.eng.TopicLevel,
 		Refresh: func(ctx context.Context) error {
 			a.say("stats.updating", nil)
 			return a.buildStats(ctx)
 		},
-	}, a.learner.ID, catalog)
-	if err != nil {
-		return err
+	}, a.learner.ID, catalog, time.Now())
+	if rec.RefreshErr != nil {
+		a.warnRefresh(rec.RefreshErr)
 	}
-	if loaded.RefreshErr != nil {
-		a.warnRefresh(loaded.RefreshErr)
-	}
-	if loaded.Source == selector.SourceFallback {
+	if rec.Source == selector.SourceFallback {
 		a.say("next.fallback", nil)
 	}
-
-	pick, err := selector.Next(loaded.Input, time.Now())
 	if errors.Is(err, selector.ErrNoCandidate) {
 		a.say("next.none", nil)
 		return nil
@@ -58,21 +47,16 @@ func (a *App) Next(ctx context.Context) error {
 		return err
 	}
 
-	seed := rand.Int63()
+	pick := rec.Pick
+	seed, err := play.Seed(a.exercisesDir(), pick, rand.Int63)
+	if err != nil {
+		return err
+	}
 	if pick.Reason == selector.ReasonReview {
-		ex, err := exercise.Load(filepath.Join(a.root, "exercises", pick.Exercise.ID))
-		if err != nil {
-			return err
-		}
-		seed = selector.ReviewSeed(ex.SelectVariant, *pick.Due, rand.Int63)
 		a.say("next.review", map[string]string{"exercise": pick.Exercise.ID})
 	} else {
-		level := loaded.Input.Topics[pick.Exercise.Topic].Level
-		if level == 0 {
-			level = 1
-		}
 		a.say("next.weakest", map[string]string{
-			"exercise": pick.Exercise.ID, "topic": pick.Exercise.Topic, "level": fmt.Sprint(level),
+			"exercise": pick.Exercise.ID, "topic": pick.Exercise.Topic, "level": fmt.Sprint(rec.Level),
 		})
 	}
 	return a.startExercise(ctx, pick.Exercise.ID, seed)
@@ -133,9 +117,9 @@ func (a *App) refreshAfterSession(ctx context.Context) {
 	}
 }
 
-// buildStats runs dbt against the app's database.
+// buildStats runs dbt against the app's database, under the stats lock.
 func (a *App) buildStats(ctx context.Context) error {
-	return dbt.Build(ctx, filepath.Join(a.root, "dbt"), a.dsn)
+	return play.BuildStats(ctx, a.st, filepath.Join(a.root, "dbt"), a.dsn)
 }
 
 // warnRefresh prints a failed refresh as a warning, with its detail.

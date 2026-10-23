@@ -103,9 +103,14 @@ func Build(ctx context.Context, projectDir, dsn string) error {
 	cmd.Stdout, cmd.Stderr = &out, &out
 	err = cmd.Run()
 
-	// A killed docker client leaves its container running: remove it.
+	// A killed docker client leaves its container running: remove it. This
+	// covers both the timeout and a cancelled ctx (the dashboard server
+	// shutting down).
 	if ctx.Err() != nil {
 		_ = exec.Command("docker", "rm", "-f", name).Run()
+		if errors.Is(ctx.Err(), context.Canceled) {
+			return fmt.Errorf("dbt build cancelled:\n%s", tail(out.String(), outputTail))
+		}
 		return fmt.Errorf("dbt build did not finish within %s:\n%s", Timeout, tail(out.String(), outputTail))
 	}
 	if err == nil {

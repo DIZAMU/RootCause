@@ -1,8 +1,8 @@
 // Command rootcause is the RootCause CLI (spec section 10).
 //
 // The play commands are init, next, start, shell, ticket, hint, check, reset,
-// giveup, status, list, stats and lang. The developer commands validate, vars
-// and selftest need no database. A later phase adds serve (dashboard).
+// giveup, status, list, stats, serve (the dashboard) and lang. The developer
+// commands validate, vars and selftest need no database.
 package main
 
 import (
@@ -75,6 +75,8 @@ func runApp(ctx context.Context, cmd string, args []string) int {
 		cmdErr = app.Stats(ctx, args)
 	case "lang":
 		cmdErr = app.Lang(ctx, args)
+	case "serve":
+		cmdErr = app.Serve(ctx, args)
 	default:
 		fmt.Fprint(os.Stderr, app.UnknownCommand(cmd))
 		return 2

@@ -4,50 +4,22 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"maps"
 	"math/rand"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/DIZAMU/RootCause/internal/dbt"
 	"github.com/DIZAMU/RootCause/internal/exercise"
-	"github.com/DIZAMU/RootCause/internal/runtime"
+	"github.com/DIZAMU/RootCause/internal/play"
+	"github.com/DIZAMU/RootCause/internal/runtime/scripted"
 	"github.com/DIZAMU/RootCause/internal/selector"
 	"github.com/DIZAMU/RootCause/internal/session"
 	"github.com/DIZAMU/RootCause/internal/store"
 )
-
-// scriptedRuntime stands in for Docker so the engine's real Start, Check,
-// GiveUp and Expire run without sandboxes. Every command succeeds; check.sh
-// passes or fails as checkPasses says; systemd reports a finished boot.
-type scriptedRuntime struct{ checkPasses bool }
-
-func (r *scriptedRuntime) Create(_ context.Context, spec runtime.SandboxSpec) (runtime.Sandbox, error) {
-	return runtime.Sandbox{ID: "fake-" + spec.Name, Name: spec.Name, Labels: spec.Labels}, nil
-}
-func (r *scriptedRuntime) Exec(_ context.Context, _ string, cmd []string, _ io.Reader) (runtime.ExecResult, error) {
-	joined := strings.Join(cmd, " ")
-	switch {
-	case strings.Contains(joined, "is-system-running"):
-		return runtime.ExecResult{Stdout: []byte("running\n")}, nil
-	case strings.HasSuffix(joined, "/root/check.sh") && r.checkPasses:
-		return runtime.ExecResult{Stdout: []byte(`{"passed": true}` + "\n")}, nil
-	case strings.HasSuffix(joined, "/root/check.sh"):
-		return runtime.ExecResult{ExitCode: 1, Stdout: []byte(`{"passed": false, "feedback": "x"}` + "\n")}, nil
-	}
-	return runtime.ExecResult{Stdout: []byte("{}\n")}, nil
-}
-func (r *scriptedRuntime) CopyIn(context.Context, string, string, []byte) error { return nil }
-func (r *scriptedRuntime) Restart(context.Context, string) error                { return nil }
-func (r *scriptedRuntime) Destroy(context.Context, string) error                { return nil }
-func (r *scriptedRuntime) List(context.Context) ([]runtime.Sandbox, error)      { return nil, nil }
-func (r *scriptedRuntime) BuildImage(context.Context, string, string) error     { return nil }
 
 // result is how a scripted session ends.
 type result int
@@ -65,7 +37,7 @@ type world struct {
 	ctx      context.Context
 	st       *store.Store
 	eng      *session.Engine
-	rt       *scriptedRuntime
+	rt       *scripted.Runtime
 	learner  int
 	exDir    string
 	project  string
@@ -94,7 +66,7 @@ func (w *world) play(exerciseID string, res result, ageHours int) {
 	}
 	switch res {
 	case solve3, solve1:
-		w.rt.checkPasses = true
+		w.rt.SetCheck(true, "")
 		if r, err := w.eng.Check(w.ctx, sess.ID); err != nil || !r.Passed {
 			w.t.Fatalf("check %s: passed=%v err=%v", exerciseID, r.Passed, err)
 		}
@@ -103,7 +75,7 @@ func (w *world) play(exerciseID string, res result, ageHours int) {
 			w.t.Fatalf("give up %s: %v", exerciseID, err)
 		}
 	case expiredFail:
-		w.rt.checkPasses = false
+		w.rt.SetCheck(false, "x")
 		if r, err := w.eng.Check(w.ctx, sess.ID); err != nil || r.Passed {
 			w.t.Fatalf("check %s: passed=%v err=%v", exerciseID, r.Passed, err)
 		}
@@ -193,7 +165,7 @@ func TestScriptedSelection(t *testing.T) {
 	}
 
 	exDir, _ := filepath.Abs("../../exercises")
-	rt := &scriptedRuntime{}
+	rt := &scripted.Runtime{}
 	w := &world{
 		t: t, ctx: ctx, st: st, rt: rt, exDir: exDir, project: project, dsn: dsn,
 		eng:      session.New(rt, rt, nil, st, exDir),
@@ -251,7 +223,10 @@ func TestScriptedSelection(t *testing.T) {
 	if p.Due.LastSeed != w.lastSeed["perm-02-backup-denied"] {
 		t.Errorf("queue's last seed = %d, want %d", p.Due.LastSeed, w.lastSeed["perm-02-backup-denied"])
 	}
-	seed := selector.ReviewSeed(ex.SelectVariant, *p.Due, rand.Int63)
+	seed, err := play.Seed(exDir, p, rand.Int63)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if maps.Equal(ex.SelectVariant(seed), p.Due.LastVariant) {
 		t.Errorf("review seed %d repeats the last variant %v", seed, p.Due.LastVariant)
 	}
@@ -307,23 +282,16 @@ func TestScriptedSelection(t *testing.T) {
 	}
 }
 
-// loadCatalog loads every exercise as the CLI does.
+// loadCatalog loads every exercise through the CLI's catalog loader.
 func loadCatalog(t *testing.T, exDir string) []selector.Exercise {
 	t.Helper()
-	entries, err := os.ReadDir(exDir)
+	rows, err := play.Catalog(exDir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var out []selector.Exercise
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		ex, err := exercise.Load(filepath.Join(exDir, e.Name()))
-		if err != nil {
-			t.Fatal(err)
-		}
-		out = append(out, selector.Exercise{ID: ex.ID, Topic: ex.Topic, Difficulty: ex.Difficulty})
+	for _, r := range rows {
+		out = append(out, selector.Exercise{ID: r.ID, Topic: r.Topic, Difficulty: r.Difficulty})
 	}
 	if len(out) != 8 || !slices.ContainsFunc(out, func(e selector.Exercise) bool { return e.ID == "svc-02-dies-on-reboot" }) {
 		t.Fatalf("catalog = %v, want the 8 v1 exercises", out)

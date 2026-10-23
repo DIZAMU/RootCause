@@ -9,3 +9,7 @@
 # dbt run on the host.
 /dbt/target/
 /dbt/logs/
+# Dashboard build: npm installs into node_modules, and scripts/build-web.sh
+# writes dist, which `go build -tags webdist` embeds.
+/web/node_modules/
+/web/dist/
