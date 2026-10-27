@@ -6,6 +6,77 @@ Hands-on IT troubleshooting practice. Each exercise is a broken Linux machine wi
 
 See [`docs/SPEC.md`](docs/SPEC.md) for the full specification.
 
+## How it works
+
+RootCause has two ways to run sessions. Both use the same engine, database and dashboard; only the runtime that creates sandboxes changes (`RC_RUNTIME`). The boxes marked as trust boundaries are where one side must not be able to reach into the other. The decisions behind each part are in [`docs/adr`](docs/adr/README.md).
+
+### v1: local, with Docker
+
+```mermaid
+flowchart LR
+  browser["Browser on Windows"]
+  subgraph wsl["WSL2 host (trust boundary: the owner's machine)"]
+    cli["rootcause CLI"]
+    serve["rootcause serve<br/>127.0.0.1:7300<br/>Host check + token"]
+    engine["Engine: sessions, grading, selector"]
+    pg[("PostgreSQL<br/>Docker Compose")]
+    dbt["dbt container<br/>no capabilities, read-only"]
+    subgraph docker["Docker Engine with userns-remap"]
+      subgraph sb["Sandbox container (trust boundary: learner is root here)"]
+        machine["Exercise image<br/>cap-drop ALL + allowlist<br/>no network or internal only"]
+      end
+    end
+  end
+  browser -->|localhost only| serve
+  cli --> engine
+  serve --> engine
+  engine --> pg
+  dbt --> pg
+  engine -->|docker CLI| sb
+```
+
+### v2: the local k3d cluster, deployed by Argo CD
+
+```mermaid
+flowchart LR
+  browser["Browser on Windows"]
+  subgraph github["GitHub (private)"]
+    repo["main branch<br/>deploy/k8s"]
+    ghcr["GHCR<br/>rootcause-api vX.Y.Z"]
+    release["release.yml<br/>on a vX.Y.Z tag"]
+  end
+  subgraph host["WSL2 host"]
+    subgraph k3d["k3d cluster (trust boundary: nodes run as host root)"]
+      subgraph argocd["argocd (trust boundary: writes anywhere it is asked)"]
+        argo["Argo CD core<br/>project rootcause"]
+      end
+      subgraph system["rootcause-system: PSA restricted, default-deny"]
+        api["API + dashboard<br/>Role: pods in sandboxes only"]
+        pgk[("PostgreSQL")]
+        cron["dbt CronJob"]
+      end
+      subgraph sandboxes["sandboxes: PSA baseline, admission policy, default-deny"]
+        pod["Session pod (trust boundary: own user namespace)<br/>hostUsers false, no token, emptyDir only"]
+        runner["Check runner pod"]
+      end
+    end
+  end
+  browser -->|127.0.0.1:7300| api
+  api -->|exec API, terminal| pod
+  api --> pgk
+  cron --> pgk
+  runner -->|internal network only| pod
+  release --> ghcr
+  argo -->|read-only deploy key| repo
+  argo -->|sync, self-heal| system
+  argo -->|sync, self-heal| sandboxes
+  ghcr -->|pull, read-only token| api
+```
+
+- A sandbox can reach neither the internet nor `rootcause-system`, and only a check runner may connect to it.
+- The API's service account may only create, read, exec into and delete pods in `sandboxes`. The admission policy refuses any sandbox pod that is not locked down, whoever creates it.
+- Everything the cluster publishes listens on the host's 127.0.0.1 only.
+
 ## Local setup
 
 RootCause runs in WSL2 or Linux with Docker Engine and Go. Each exercise runs in a container where you are root, so root in the container must not be root on your machine. Docker must use user namespace remapping or rootless mode. The CLI refuses to start sessions otherwise.
@@ -35,7 +106,7 @@ The same sessions can run in a local k3d cluster (spec section 8.2): the API and
 1. Run `scripts/install-k8s-tools.sh`. It puts pinned, checksum-verified `k3d` and `kubectl` in `~/.local/bin`, without sudo.
 2. Run `scripts/k8s-up.sh --dev` to try the working tree: it creates the cluster (1 server, 2 agents), builds the API image and the exercise images and imports them, generates the database password into git-ignored `deploy/k8s/.env`, and applies `deploy/k8s-dev`. Re-run it after a change. If Argo CD is installed, `--dev` turns its automated sync off first.
 3. Open http://localhost:7300. Start an exercise and work in the terminal on the exercise page.
-4. Run `scripts/k8s-prove.sh` to check the isolation: the API's permissions, the network policies, and one full session through the dashboard. That session plays on a separate database, `rootcause_cluster_test`, through a second API pod, and leaves the real one untouched.
+4. Run `scripts/k8s-prove.sh` to check the isolation: the API's permissions, the network policies, one full session through the dashboard, that every published port is bound to 127.0.0.1, and the sandbox admission policy (each forbidden pod change refused, as the API and as Argo CD). That session plays on a separate database, `rootcause_cluster_test`, through a second API pod, and leaves the real one untouched.
 5. Run `scripts/k8s-down.sh` to stop the cluster and free memory; its data stays. `scripts/k8s-dbt.sh` rebuilds the statistics at once instead of waiting for the 10-minute CronJob. `scripts/k8s-memory.sh` prints the memory each node and container uses.
 
 `RC_RUNTIME=kubernetes` points the CLI at the cluster, for example `RC_RUNTIME=kubernetes scripts/validate-exercise.sh perm-01-shared-folder 1`. svc-02 boots systemd, which does not run in a pod, so it is refused there (spec section 13.3).
@@ -80,6 +151,7 @@ go test -count=1 ./...
 - `RC_DBT_STRESS=1 go test -run TestBuildStress ./internal/dbt/` kills dbt builds at random points and checks that the next build succeeds. `RC_DBT_STRESS_ROUNDS` sets the rounds (default 10).
 - A failed dbt build saves its full `dbt.log` under `~/.cache/rootcause/dbt-logs/` and prints the path. The newest 20 are kept.
 - `TestClusterSession` plays a session against the deployed cluster and runs only with `RC_CLUSTER_URL` set; `scripts/k8s-prove.sh` sets it.
+- `TestSandboxAdmission` checks the sandbox admission policy against the pods the runtime builds, with server-side dry runs as the API and as Argo CD, and runs only with `RC_CLUSTER_ADMISSION` set; `scripts/k8s-prove.sh` sets it too.
 
 ## CI
 
@@ -87,7 +159,7 @@ GitHub Actions runs five workflows (spec section 14). Every action is pinned by 
 
 | Workflow | Check name | Does |
 |---|---|---|
-| `ci.yml` | `ci-checks`, `ci-test`, `ci-release-image` | gofmt, go vet, golangci-lint, shellcheck, i18n parity, the dashboard build, and every Go test with Postgres and Docker. Fails if any test is skipped. `ci-release-image` checks that the digest in `deploy/k8s/kustomization.yaml` is a pushed `vX.Y.Z` release, or the zero placeholder |
+| `ci.yml` | `ci-checks`, `ci-test`, `ci-release-image` | gofmt, go vet, golangci-lint, shellcheck, i18n parity, the dashboard build, and every Go test with Postgres and Docker. Fails if any test is skipped. Also fails if a script puts a credential on a command line, or if the rendered sandbox admission policy loses a rule, its Fail policy or its Deny-only binding. `ci-release-image` checks that the digest in `deploy/k8s/kustomization.yaml` is a pushed `vX.Y.Z` release, or the zero placeholder |
 | `exercises.yml` | `exercises` | Validates the changed exercises with seeds 1, 2 and 3. All of them on manual runs, and when `release.yml` calls it |
 | `dbt.yml` | `dbt` | dbt build against a Postgres service container, when the dbt project or its inputs changed |
 | `commit-policy.yml` | `commit-policy` | Rejects Co-authored-by trailers, tool attribution lines, author emails other than the owner's, and commits GitHub does not show as Verified |
