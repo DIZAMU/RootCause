@@ -177,7 +177,7 @@ func (e *Engine) assertNoRunner(ctx context.Context, sandboxName string) error {
 		return err
 	}
 	for _, b := range boxes {
-		if b.Name == runnerSpec(runtime.SandboxSpec{Name: sandboxName}).Name {
+		if b.Name == RunnerSpec(runtime.SandboxSpec{Name: sandboxName}).Name {
 			return fmt.Errorf("runner container %s left behind after the check", b.Name)
 		}
 	}

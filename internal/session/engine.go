@@ -164,9 +164,22 @@ const (
 
 // specFor builds the sandbox spec for an exercise session.
 func (e *Engine) specFor(ex *exercise.Exercise, sessionID string) runtime.SandboxSpec {
-	labels := map[string]string{labelSession: sessionID}
+	database := ""
 	if e.st != nil {
-		labels[labelDatabase] = e.st.Database()
+		database = e.st.Database()
+	}
+	return SandboxSpec(ex, sessionID, database)
+}
+
+// SandboxSpec builds the spec a session's sandbox is created from: the
+// exercise's image, limits, network, capabilities, init and tmpfs volumes,
+// and the labels the reaper reads. database labels the database that owns the
+// session; "" leaves the label out. The engine creates every sandbox from
+// it.
+func SandboxSpec(ex *exercise.Exercise, sessionID, database string) runtime.SandboxSpec {
+	labels := map[string]string{labelSession: sessionID}
+	if database != "" {
+		labels[labelDatabase] = database
 	}
 	var tmpfs []runtime.Tmpfs
 	for _, t := range ex.Tmpfs {
@@ -333,7 +346,7 @@ func (e *Engine) runCheck(ctx context.Context, ex *exercise.Exercise, spec runti
 		return e.execScript(ctx, sandboxID, ex.Dir(), "check.sh", env)
 	}
 
-	rs := runnerSpec(spec)
+	rs := RunnerSpec(spec)
 	_ = e.rt.Destroy(ctx, rs.Name) // a runner left by an interrupted check
 	runner, err := e.rt.Create(ctx, rs)
 	if err != nil {
@@ -349,12 +362,12 @@ func (e *Engine) runCheck(ctx context.Context, ex *exercise.Exercise, spec runti
 	return e.execScript(ctx, runner.ID, ex.Dir(), "check.sh", runnerEnv)
 }
 
-// runnerSpec derives the runner container's spec from the sandbox's: the same
+// RunnerSpec derives the runner container's spec from the sandbox's: the same
 // image and locked-down limits, no added capabilities, the internal network
 // (the loader requires it for runner checks), and a label marking it as a
 // runner. It keeps the sandbox's labels, so the reaper treats an orphaned
 // runner like its sandbox.
-func runnerSpec(sandbox runtime.SandboxSpec) runtime.SandboxSpec {
+func RunnerSpec(sandbox runtime.SandboxSpec) runtime.SandboxSpec {
 	labels := make(map[string]string, len(sandbox.Labels)+1)
 	for k, v := range sandbox.Labels {
 		labels[k] = v
