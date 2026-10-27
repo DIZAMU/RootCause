@@ -10,8 +10,11 @@ metadata:
   namespace: rootcause-system
 spec:
   type: NodePort
+  # Only this Deployment's pod: scripts/k8s-prove.sh runs a second API pod
+  # (instance prove) that shares the app label, and so the network policies.
   selector:
     app: rootcause-api
+    rootcause.instance: main
   ports:
     - port: 7300
       targetPort: 7300
@@ -33,6 +36,7 @@ spec:
     metadata:
       labels:
         app: rootcause-api
+        rootcause.instance: main
     spec:
       serviceAccountName: rootcause-api
       # The kubernetes runtime needs the service account's token; the

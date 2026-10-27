@@ -10,11 +10,13 @@
 #      policies reaches the same addresses, so the blocks come from the
 #      NetworkPolicies, not from the probes.
 #   3. A session runs fully in the cluster from the browser's side: the
-#      dashboard's API and web terminal on 127.0.0.1:7300
-#      (TestClusterSession), with the network probes repeated from the real
-#      session pod's terminal.
+#      dashboard's API and web terminal (TestClusterSession), with the network
+#      probes repeated from the real session pod's terminal. It plays on its
+#      own database, rootcause_cluster_test, through a second API pod, and the
+#      real database must be unchanged afterwards (working rule 10).
 #
-# The probe pods and the rootcause-probe namespace are removed at the end.
+# The probe pods, the rootcause-probe namespace, the second API pod, its
+# Secret and the test database are removed at the end.
 # Exit 0 only if every check passes.
 set -euo pipefail
 
@@ -193,18 +195,82 @@ expect rootcause-probe probe-control "postgres-service=$pg_svc_ip:5432" closed
 expect rootcause-probe probe-control "sandbox=$target_ip:8080" closed
 
 echo "== 3. a session from the browser's side"
+# The session plays on its own database, never on the cluster's real one
+# (rootcause): a second API pod, instance "prove", copied from the running
+# API pod, serves rootcause_cluster_test on port 7301 through kubectl
+# port-forward. It, its Secret and the database are removed at the end, and
+# the real database's session count must not change.
+testdb=rootcause_cluster_test
+psql() { kc exec -n rootcause-system postgres-0 -- psql -U rootcause -d "$1" -tAc "$2"; }
+forward_pid=""
+secretdir="$(mktemp -d)"
+cleanup_prove() {
+	if [[ -n "$forward_pid" ]]; then kill "$forward_pid" 2>/dev/null || true; fi
+	kc delete pod -n rootcause-system rootcause-api-prove --ignore-not-found --grace-period=0 --wait=true >/dev/null 2>&1 || true
+	kc delete secret -n rootcause-system rootcause-db-prove --ignore-not-found >/dev/null 2>&1 || true
+	kc exec -n rootcause-system postgres-0 -- dropdb -U rootcause --if-exists --force "$testdb" >/dev/null 2>&1 || true
+	rm -rf "$secretdir"
+}
+trap 'cleanup_prove; cleanup' EXIT
+cleanup_prove
+secretdir="$(mktemp -d)"
+real_before="$(psql rootcause "SELECT count(*) FROM session")"
+kc exec -n rootcause-system postgres-0 -- createdb -U rootcause "$testdb"
+(
+	umask 077
+	password="$(sed -n 's/^POSTGRES_PASSWORD=//p' "$root/deploy/k8s/.env")"
+	[[ -n "$password" ]] || { echo "k8s-prove: no POSTGRES_PASSWORD in deploy/k8s/.env" >&2; exit 1; }
+	printf 'postgres://rootcause:%s@postgres:5432/%s?sslmode=disable' "$password" "$testdb" >"$secretdir/database-url"
+)
+kc create secret generic rootcause-db-prove -n rootcause-system \
+	--from-file=database-url="$secretdir/database-url" >/dev/null
+rm -f "$secretdir/database-url"
+# The running API pod with the test database, its own port and its own
+# instance label, so the Service never sends the dashboard to it.
+kc get pod -n rootcause-system -l app=rootcause-api,rootcause.instance=main -o json | python3 -c '
+import json, sys
+src = json.load(sys.stdin)["items"][0]["spec"]
+c = src["containers"][0]
+c["args"] = ["serve", "--listen-all", "--port", "7301"]
+c["ports"] = [{"containerPort": 7301}]
+c["readinessProbe"] = {"tcpSocket": {"port": 7301}, "periodSeconds": 2}
+for e in c["env"]:
+    if e["name"] == "RC_DATABASE_URL":
+        e["valueFrom"]["secretKeyRef"]["name"] = "rootcause-db-prove"
+c["volumeMounts"] = [m for m in c["volumeMounts"] if not m["name"].startswith("kube-api-access")]
+spec = {k: v for k, v in src.items() if k not in ("nodeName", "tolerations", "priority", "preemptionPolicy")}
+spec["volumes"] = [v for v in src["volumes"] if not v["name"].startswith("kube-api-access")]
+json.dump({"apiVersion": "v1", "kind": "Pod",
+           "metadata": {"name": "rootcause-api-prove", "namespace": "rootcause-system",
+                        "labels": {"app": "rootcause-api", "rootcause.instance": "prove"}},
+           "spec": spec}, sys.stdout)
+' | kc apply -f - >/dev/null
+kc wait --for=condition=Ready pod -n rootcause-system rootcause-api-prove --timeout=120s >/dev/null
+kubectl --context "$context" port-forward -n rootcause-system pod/rootcause-api-prove 7301:7301 >/dev/null 2>&1 &
+forward_pid=$!
+for _ in $(seq 50); do
+	curl -fs -o /dev/null http://localhost:7301/ && break
+	sleep 0.2
+done
 probes="$(tr ' ' ',' <<<"$targets"),other-sandbox=$target_ip:8080"
 log="$(mktemp)"
 rc=0
-RC_CLUSTER_URL=http://localhost:7300 RC_CLUSTER_PROBES="$probes" \
+RC_CLUSTER_URL=http://localhost:7301 RC_CLUSTER_DATABASE="$testdb" RC_CLUSTER_PROBES="$probes" \
 	go test -count=1 -v -run '^TestClusterSession$' ./internal/server/ >"$log" 2>&1 || rc=$?
 grep -E '^\s+cluster_test|^(--- |ok|FAIL)' "$log" || true
 if [[ "$rc" -eq 0 ]] && grep -q -- '--- PASS: TestClusterSession' "$log"; then
-	pass "TestClusterSession"
+	pass "TestClusterSession on $testdb"
 else
 	fail "TestClusterSession (exit $rc)"
 fi
 rm -f "$log"
+played="$(psql "$testdb" "SELECT count(*) FROM session")"
+real_after="$(psql rootcause "SELECT count(*) FROM session")"
+if [[ "$played" -ge 1 && "$real_before" == "$real_after" ]]; then
+	pass "the session went to $testdb ($played session); rootcause unchanged ($real_after sessions)"
+else
+	fail "sessions: $testdb has $played, rootcause went from $real_before to $real_after"
+fi
 
 echo
 if [[ "$failures" -gt 0 ]]; then
