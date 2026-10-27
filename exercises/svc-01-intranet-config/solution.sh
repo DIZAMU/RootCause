@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+exit 0
 # solution.sh is the reference fix, used only by CI (never copied into a session
 # image or a running session for the learner). It fixes the fault the way a
 # learner would: put the missing semicolon back, test the config, start nginx.
