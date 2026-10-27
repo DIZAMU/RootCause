@@ -20,6 +20,15 @@ cd "$root"
 
 die() { echo "ci-release-image: $*" >&2; exit 1; }
 
+# curl_with <curl config line> <curl args...>: runs curl with one config line
+# (a user or a header) read from stdin, so a credential never reaches a
+# command line, where other processes could read it.
+curl_with() {
+	local line="$1"
+	shift
+	curl --config - "$@" <<<"$line"
+}
+
 # bearer prints a pull token for the repository, from GITHUB_TOKEN. GHCR
 # answers 401 or 403 both when the token may not read the package and when
 # the package does not exist yet (before the first release); bearer then
@@ -28,7 +37,7 @@ bearer() {
 	[[ -n "${GITHUB_TOKEN:-}" ]] || die "GITHUB_TOKEN is not set"
 	local body code
 	body="$(mktemp)"
-	code="$(curl -sS -o "$body" -w '%{http_code}' -u "${GITHUB_ACTOR:-x}:$GITHUB_TOKEN" \
+	code="$(curl_with "user = \"${GITHUB_ACTOR:-x}:$GITHUB_TOKEN\"" -sS -o "$body" -w '%{http_code}' \
 		"https://$registry/token?service=$registry&scope=repository:$repo:pull")" || { rm -f "$body"; die "GHCR token request failed"; }
 	case "$code" in
 	200) python3 -c 'import json, sys; print(json.load(sys.stdin).get("token", ""))' <"$body" ;;
@@ -43,8 +52,8 @@ bearer() {
 manifest_digest() {
 	local code headers
 	headers="$(mktemp)"
-	code="$(curl -sS -o /dev/null -D "$headers" -w '%{http_code}' -I \
-		-H "Authorization: Bearer $1" -H "Accept: $accept" \
+	code="$(curl_with "header = \"Authorization: Bearer $1\"" -sS -o /dev/null -D "$headers" -w '%{http_code}' -I \
+		-H "Accept: $accept" \
 		"https://$registry/v2/$repo/manifests/$2")"
 	case "$code" in
 	200) tr -d '\r' <"$headers" | awk -F': ' 'tolower($1) == "docker-content-digest" { print $2 }' ;;
@@ -57,7 +66,7 @@ manifest_digest() {
 # release_tags <token> prints the repository's vX.Y.Z tags.
 release_tags() {
 	local out
-	out="$(curl -fsS -H "Authorization: Bearer $1" "https://$registry/v2/$repo/tags/list?n=1000")" || return 0
+	out="$(curl_with "header = \"Authorization: Bearer $1\"" -fsS "https://$registry/v2/$repo/tags/list?n=1000")" || return 0
 	python3 -c 'import json, sys; print("\n".join(json.load(sys.stdin).get("tags") or []))' <<<"$out" |
 		grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || true
 }
