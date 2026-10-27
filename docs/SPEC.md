@@ -246,15 +246,17 @@ WSL2
     ├── namespace rootcause-system
     │   ├── api + dashboard (Deployment)
     │   ├── postgres (StatefulSet)
-    │   ├── dbt (CronJob every 10 minutes; a Job on demand by script)
-    │   └── argocd (Phase 8)
-    └── namespace sandboxes
-        └── one pod per session: the exercise image, nothing added
+    │   └── dbt (CronJob every 10 minutes; a Job on demand by script)
+    ├── namespace sandboxes
+    │   └── one pod per session: the exercise image, nothing added
+    └── namespace argocd
+        └── Argo CD core: application controller, repo server, redis
 ```
 
 - Reached from Windows through k3d port mapping to `127.0.0.1:7300` on the host only. Tailscale only if remote access is needed.
 - The browser terminal is xterm.js in the dashboard, on a WebSocket to the API. The API runs `bash` in the session pod through the Kubernetes exec API (the v1 `docker exec` model), so nothing in a sandbox listens on the network and sandboxes stay closed to ingress. Phase 7 chose this over ttyd in the pod, which would have needed a listening port and a NetworkPolicy opening every sandbox to `rootcause-system`, plus an extra binary in every exercise image.
-- `scripts/k8s-up.sh` builds the images, imports them into the cluster's nodes (`k3d image import`), creates the database Secret and applies `deploy/k8s`. `scripts/k8s-prove.sh` proves the Phase 7 criteria. The CLI uses the cluster with `RC_RUNTIME=kubernetes`; `rootcause selftest` then validates exercises in sandbox pods.
+- `scripts/k8s-up.sh` creates the cluster, builds the exercise images and imports them into the cluster's nodes (`k3d image import`; sandbox pods never pull), creates the namespaces and the Secrets, installs Argo CD and applies `deploy/argocd`. Argo CD then syncs `deploy/k8s` from `main`, and the API runs the release pinned there by digest from GHCR (section 14). `scripts/k8s-up.sh --dev` instead builds the API image from the working tree and applies `deploy/k8s-dev`, after turning Argo CD's automated sync off. `scripts/k8s-prove.sh` proves the Phase 7 criteria and `scripts/k8s-gitops-prove.sh` the Phase 8 ones. The CLI uses the cluster with `RC_RUNTIME=kubernetes`; `rootcause selftest` then validates exercises in sandbox pods.
+- Argo CD is the core install (no UI, no SSO, no notifications, no ApplicationSet controller) at a pinned version, with its install manifest checked against a pinned SHA-256 and its images pinned by digest. Its one Application belongs to the AppProject `rootcause` (section 13.2).
 
 ### 8.3 Runtime abstraction
 
@@ -391,7 +393,10 @@ Implementation:
 - `rootcause-system` is default-deny too. The API accepts 7300 and reaches Postgres, cluster DNS and the Kubernetes API server's address; dbt reaches Postgres and DNS; Postgres accepts the API and dbt.
 - Session pods: their own user namespace (`hostUsers: false`, so pod root is not node root), no service account token mounted, no service links, seccomp `RuntimeDefault`, no hostPath volumes, all capabilities dropped and the exercise's allowlist added back, no privilege escalation, memory and CPU limits, in-memory `emptyDir` for `tmpfs`, and no cluster DNS. The pause container is PID 1 and reaps stopped processes. The process limit is the kubelet's `pod-max-pids` (256), since Kubernetes has no per-pod setting.
 - Pod Security Admission enforces `restricted` in `rootcause-system` and `baseline` in `sandboxes`.
-- Secrets never enter the repo. Local secrets live in git-ignored `.env` files. Cluster secrets are created outside git: `scripts/k8s-up.sh` generates the Postgres password once into git-ignored `deploy/k8s/.env` and creates the Secret from files, so the password never appears in a manifest, on a command line or in output. Sealed secrets are for Phase 8 to decide, with GitOps.
+- Secrets never enter the repo. Local secrets live in git-ignored `.env` files. Cluster secrets are created outside git by `scripts/k8s-up.sh`, from files, so no secret appears in a manifest, on a command line or in output: `rootcause-db` (the Postgres password, generated once into git-ignored `deploy/k8s/.env`), `ghcr-pull` (the owner's GHCR token) and `repo-rootcause` in `argocd` (the owner's read-only deploy key). The owner keeps the token and the key in `~/.config/rootcause`, mode 600. Phase 8 decided against sealed secrets: there are three secrets, all created by one script on one laptop.
+- What is not in git is created by `scripts/k8s-up.sh` and never tracked by Argo CD, so prune leaves it: the namespaces, the three Secrets, and the NetworkPolicy to the API server's address (which is known only once the cluster runs).
+- The AppProject `rootcause` limits what a bad commit on `main` can make Argo CD do: this repository as the only source, `rootcause-system` and `sandboxes` on this cluster as the only destinations, no cluster-wide resources at all, and only the namespaced kinds `deploy/k8s` uses. The core install has no `default` project. `scripts/k8s-gitops-prove.sh` checks that an Application pointing at another namespace or another repository is refused.
+- Argo CD's application controller can write anywhere in the cluster; the AppProject limits what it is asked to do, not what it can do. It is a trust boundary next to the API (Phase 9).
 
 ### 13.3 Known limits (v1)
 
@@ -404,6 +409,8 @@ Implementation:
 Known limits (v2, Kubernetes):
 
 - k3d runs its node containers privileged and in the host's user namespace, so node root is host root, whatever Docker's userns-remap says. Sandbox pods are isolated from it by `hostUsers: false`; system pods run as non-root users in their own user namespaces as well. Phase 9 reviews this gap (OQ-3).
+- Pod Security Admission `baseline` on `sandboxes` does not require `hostUsers: false`, so a compromised API or Argo CD could create a pod in the host's user namespace. Phase 9 adds a ValidatingAdmissionPolicy on `sandboxes` for both service accounts.
+- The API image's `exercises/` and the exercise images imported by `scripts/k8s-up.sh` come from different trees: the release and the working tree. A changed exercise bumps its `version`, and so its image tag, so a missing image fails the session start with `ErrImageNeverPull` instead of running a stale image.
 - A check runner may connect to any sandbox on the internal network, not only its own. With two sessions, one session's runner could reach the other session's sandbox. Per-session NetworkPolicies would need the API to manage NetworkPolicies, which section 13.2 does not allow.
 - `init: systemd` exercises (svc-02) do not run on Kubernetes: in a pod with its own user namespace the cgroup filesystem stays owned by host root, so systemd cannot boot. The CLI, the dashboard and the selftest refuse such an exercise there with a clear error. There is no restart before a check either (section 8.3).
 - The cluster's dbt CronJob runs `dbt build` and fails on dbt's own exit code; the node-count check of section 9.2 applies to builds the binary starts.
@@ -416,12 +423,14 @@ Known limits (v2, Kubernetes):
 | `exercises.yml` | Changes under `exercises/` | For each changed exercise and 3 seeds: build the image; break then check must fail; break, solution, check must pass |
 | `dbt.yml` | Changes under `dbt/` | dbt build against a Postgres service container with seed data: a scripted series of sessions played through the engine |
 | `commit-policy.yml` | Every PR | Rejects Co-authored-by trailers, tool attribution lines, author emails other than the owner's, and unsigned commits |
-| `release.yml` (v2) | Tags on main | Builds and pushes images to GHCR, updates image tags in `deploy/k8s`. Argo CD syncs |
+| `release.yml` (v2) | Tags `vX.Y.Z` on main | Checks that the tag is `vX.Y.Z`, on `main` and not pushed before, validates every exercise (it calls `exercises.yml`), then builds the API image and pushes it to `ghcr.io/dizamu/rootcause-api` under that tag only. The job summary shows the digest. It never commits: the owner pins the digest in `deploy/k8s/kustomization.yaml` in a pull request, `ci.yml` checks it, and Argo CD syncs it once merged |
 
 - Private repo on the free plan means limited Actions minutes. Only changed exercises are validated per PR. Full validation runs on tags.
 - `exercises.yml` and `dbt.yml` start on every PR and push to main, and decide inside the job whether anything changed, so they can be required checks.
 - Every action is pinned by commit SHA. Workflows have no permissions by default, and each job gets read access to the repository only.
-- GHCR images are private while the repo is private, so the cluster needs an image pull secret.
+- GHCR images are private while the repo is private, so the cluster needs an image pull secret. GitHub Packages accepts only classic personal access tokens; the pull secret uses one with `read:packages` only and a 90-day expiry.
+- Only the API image goes to GHCR. Exercise images stay local (`k3d image import`): all nine images together are about 210 MB compressed, and the free plan's 500 MB of private package storage would fill within about two releases.
+- `packages: write` is granted only to `release.yml`'s push job, `packages: read` only to its tag check and to `ci.yml`'s `ci-release-image` job (not on pull requests from forks). GITHUB_TOKEN is the only credential.
 - Images target linux/amd64 only, until something needs ARM.
 
 ## 15. Git and authorship
@@ -455,7 +464,7 @@ Known limits (v2, Kubernetes):
 - Docker Engine installed directly in WSL2, not Docker Desktop.
 - Toolchain: Go (latest stable), Node LTS (build time only, for the dashboard). dbt runs in a container.
 - v1 resource budget: at most 2 concurrent sandboxes, default 256 MiB and 0.5 CPU each.
-- v2 resource budget: k3d with 1 server and 2 agents. If memory is tight, measure Argo CD first (OQ-4).
+- v2 resource budget: k3d with 1 server and 2 agents, Argo CD core, at most 2 sandboxes. Measured in Phase 8: about 2.5 GB of the 8 GB WSL2 cap at peak (OQ-4). `scripts/k8s-memory.sh` prints the current use per node and container.
 
 ## 18. Phases and acceptance criteria
 
@@ -517,6 +526,7 @@ Done when: a session runs fully in the cluster from the browser, a sandbox pod c
 
 ### Phase 8: GitOps
 - `release.yml`, GHCR images, Argo CD syncing `deploy/k8s`.
+- `scripts/k8s-gitops-prove.sh`: the Application Synced and Healthy at `main` with automated sync, prune and self-heal on; the running API image equals the pinned release digest; a change made by hand is reverted; the project refuses other destinations and sources.
 
 Done when: a merged change reaches the cluster without manual kubectl.
 
@@ -543,7 +553,7 @@ The owner decides when the repo goes public. Ready means:
 | OQ-1 | Service exercises usually rely on systemd, which often needs extra container privileges | Resolved in Phase 3: a) systemd as PID 1. It boots under the v1 security flags with no capability outside the allowlist, given in-memory `/run` and `/run/lock`. A unit that is started but not enabled is gone after `docker restart`; an enabled one is running again. journald and tmp.mount are masked (they need SETPCAP). Exercises opt in with `init: systemd` | Phase 3 |
 | OQ-2 | Docker manages resolv.conf inside containers | Resolved in Phase 3: `/etc/resolv.conf` is a bind mount. In-place writes persist for the session, but tools that replace the file (`sed -i`, some editors) fail with "Device or resource busy", and `docker restart` regenerates it. So net-01's fault lives in lookup order (`/etc/nsswitch.conf`) or the local DNS server config, and its fix never needs a resolv.conf edit | Phase 3 |
 | OQ-3 | The learner is root inside the sandbox | v1 resolved: userns-remap (`/etc/docker/daemon.json` with `{"userns-remap": "default"}`). Chosen over rootless Docker because it keeps the existing daemon and needs one config change. Verified with `docker info` showing `name=userns`; container root maps to host UID 100000. The CLI refuses to run sessions without userns or rootless mode. v2: since Phase 7 every sandbox pod has its own user namespace (`hostUsers: false`, verified on this kernel: pod root maps to a high unprivileged host UID). Open for Phase 9: the k3d nodes themselves run privileged as host root, and gVisor stays an option | Phase 9 (v2) |
-| OQ-4 | Argo CD memory use on a 16 GB laptop next to the cluster | Argo CD, or Flux if too heavy. Phase 7 measured WSL2 memory in use (`free -m`, without page cache): 0.9 GB without the cluster, 1.7 GB with the bare cluster (1 server, 2 agents), 2.1 GB at peak with Postgres, the API, a session and a selftest with its runner | Phase 8 |
+| OQ-4 | Argo CD memory use on a 16 GB laptop next to the cluster | Resolved in Phase 8: Argo CD core v3.5.6, since it stays far below the agreed limit of 0.75 GB added (otherwise Flux). Phase 7 measured WSL2 memory in use (`free -m`, without page cache): 0.9 GB without the cluster, 1.7 GB with the bare cluster (1 server, 2 agents), 2.1 GB at peak with Postgres, the API, a session and a selftest with its runner. Argo CD's working set per pod (`scripts/k8s-memory.sh`): idle with no Application 226 MiB (application controller 149, repo server 56, redis 21); peak during a sync 369 MiB; steady with Applications synced 362 to 384 MiB (controller 262 to 270, repo server 71 to 103, redis 19 to 21). WSL2 in use with Argo CD: 2.27 GB before and 2.50 GB at peak during `scripts/k8s-prove.sh` (two sessions, a runner, a second API pod), so Argo CD adds about 0.4 GB | Phase 8 |
 | OQ-5 | Public live demo | Recording only, or Oracle Cloud free tier (ARM, idle reclaim risk) | After v1 |
 | OQ-6 | Elo ratings | Keep 2 up / 2 down, or switch | When the catalog passes about 30 exercises |
 
@@ -573,7 +583,9 @@ RootCause/
 ├── dbt/                      dbt project; embed.go embeds it in the binary
 ├── deploy/
 │   ├── compose/              v1: Postgres (dbt runs with docker run, see 9.2)
-│   └── k8s/                  v2: k3d cluster config, manifests (kustomize), api/Dockerfile
+│   ├── k8s/                  v2: k3d cluster config, manifests (kustomize) Argo CD syncs, api/Dockerfile
+│   ├── k8s-dev/              v2: overlay with the API image built from the working tree
+│   └── argocd/               v2: Argo CD install kustomization, the AppProject and the Application
 ├── locales/                  en.json, no.json
 ├── scripts/                  validate-exercise.sh, build-web.sh, CI helpers, k8s-*.sh
 ├── .githooks/                commit-msg
