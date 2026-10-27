@@ -246,14 +246,15 @@ WSL2
     ├── namespace rootcause-system
     │   ├── api + dashboard (Deployment)
     │   ├── postgres (StatefulSet)
-    │   ├── dbt (on-demand Job + CronJob)
-    │   └── argocd
+    │   ├── dbt (CronJob every 10 minutes; a Job on demand by script)
+    │   └── argocd (Phase 8)
     └── namespace sandboxes
-        └── one pod per session: exercise image + ttyd web terminal
+        └── one pod per session: the exercise image, nothing added
 ```
 
-- Reached from Windows through k3d port mapping to localhost. Tailscale only if remote access is needed.
-- The browser terminal is ttyd inside the session pod, proxied through the API. Sandboxes are never exposed directly.
+- Reached from Windows through k3d port mapping to `127.0.0.1:7300` on the host only. Tailscale only if remote access is needed.
+- The browser terminal is xterm.js in the dashboard, on a WebSocket to the API. The API runs `bash` in the session pod through the Kubernetes exec API (the v1 `docker exec` model), so nothing in a sandbox listens on the network and sandboxes stay closed to ingress. Phase 7 chose this over ttyd in the pod, which would have needed a listening port and a NetworkPolicy opening every sandbox to `rootcause-system`, plus an extra binary in every exercise image.
+- `scripts/k8s-up.sh` builds the images, imports them into the cluster's nodes (`k3d image import`), creates the database Secret and applies `deploy/k8s`. `scripts/k8s-prove.sh` proves the Phase 7 criteria. The CLI uses the cluster with `RC_RUNTIME=kubernetes`; `rootcause selftest` then validates exercises in sandbox pods.
 
 ### 8.3 Runtime abstraction
 
@@ -270,7 +271,9 @@ type Runtime interface {
 }
 ```
 
-Implementations: `internal/runtime/docker` (v1) and `internal/runtime/kubernetes` (v2, client-go).
+Implementations: `internal/runtime/docker` (v1) and `internal/runtime/kubernetes` (v2, client-go). `RC_RUNTIME` (`docker`, the default, or `kubernetes`) selects one. Optional capabilities sit beside the interface: `Sheller` (v1 `rootcause shell`), `Terminal` (v2 web terminal), `Diagnoser` and `SystemdChecker`.
+
+The Kubernetes runtime makes each sandbox a pod in `sandboxes`. `Create` returns once the container runs, as `docker run -d` does. `Exec` and `CopyIn` go through the exec API (`CopyIn` streams the file to `cat`). `Restart` is not supported (a restarted container starts again from its image); the only exercise that restarts before its check boots systemd, which the runtime refuses first. Pods on the internal network get a hosts entry for every other internal pod, so a check runner reaches its sandbox by name as on docker's internal network.
 
 ### 8.4 Session lifecycle
 
@@ -306,6 +309,7 @@ Migrations are versioned SQL files in `internal/store/migrations`, applied on st
 | marts | mart_review_queue | Review candidates per learner (rule 1 of section 7.2), with the time each is due |
 | marts | mart_exercise_stats | Solve rate, hint use, duration, calibration flag |
 | marts | mart_progress | Per learner, topic and day: sessions, solves, average stars, level at the end of the day |
+| marts | mart_build_info | One row: when the latest build ran. The dashboard shows it, so statistics that lag behind are visibly older |
 
 dbt reads the source tables in schema `public` and writes every model to schema `analytics`, so a build never touches the engine's tables. Outcomes in `int_session_outcomes` are `solved`, `gave_up`, `expired_fail` (expired after a check), `expired_skip` (expired with no check) and `voided`. Only the first three count in the statistics and the review queue. The engine stays the authority for levels (section 7.1). `mart_topic_levels` replays its `level_changed` events, and a test asserts that the two agree.
 
@@ -318,7 +322,7 @@ Every dbt container is labelled with its database. Before a build, containers le
 ### 9.3 When dbt runs
 
 - v1: after each solve and give up (after the result is shown, with a 120-second limit), on `rootcause stats --refresh`, and in `rootcause next` when the marts are stale. Expiry by the reaper does not run dbt; the next `rootcause next` catches up. In the dashboard, a solve or give up returns at once and dbt runs in the background, as does a rebuild when the home view finds the marts stale; starting the recommended exercise from the dashboard rebuilds stale marts first, like `rootcause next`. A Postgres advisory lock lets only one build run at a time, across the CLI and the dashboard.
-- v2: an on-demand Job after each session, plus a CronJob every 15 minutes as backstop.
+- v2: a CronJob every 10 minutes (`concurrencyPolicy: Forbid`). The API's service account may not start Jobs (section 13.2), so the dashboard shows when the marts were last built instead. `scripts/k8s-dbt.sh` runs a build at once. An init container writes the project embedded in the binary (`rootcause dbt-project`), so the cluster builds what the binary ships. The API runs with `RC_DBT_MODE=cronjob` and never starts dbt itself.
 - The marts are stale when they are missing, or when the learner's latest finished session is newer than the latest one in `int_session_outcomes`. `rootcause next` then rebuilds them once. If they are still stale, or dbt fails, the selector falls back to topic levels alone: rules 2 to 4 of section 7.2 from the engine's levels and the source tables, without the review queue. A failed build never changes a session's result.
 
 ## 10. CLI (v1)
@@ -337,13 +341,14 @@ Every dbt container is labelled with its database. Before a build, containers le
 | `rootcause status` | Topic levels, active session, review queue |
 | `rootcause list` | All exercises with best stars |
 | `rootcause stats [--refresh]` | Statistics per exercise from the marts, with calibration flags. `--refresh` rebuilds the marts first |
-| `rootcause serve [--port N]` | Starts the local dashboard on 127.0.0.1, port 7300 by default, until Ctrl-C. Reaps expired sessions every minute while it runs |
+| `rootcause serve [--port N] [--listen-all]` | Starts the local dashboard on 127.0.0.1, port 7300 by default, until Ctrl-C. Reaps expired sessions every minute while it runs. `--listen-all` is for the cluster deployment only and is refused unless `RC_RUNTIME=kubernetes` |
 | `rootcause lang en\|no` | Sets the interface language |
 
 ## 11. Dashboard (v1)
 
 - Home: recommended next exercise, topic levels, review queue.
-- Exercise view: ticket, hint buttons, check, reset, give up, result and walkthrough. Shows the `rootcause shell` command (v2 embeds the terminal).
+- Exercise view: ticket, hint buttons, check, reset, give up, result and walkthrough. Shows the `rootcause shell` command, or, when the runtime has a web terminal (v2), the terminal itself. The terminal closes when its session ends.
+- Home shows when the statistics were last built.
 - History: past sessions with stars and outcome.
 - Exercise list with best stars per exercise.
 - EN/NO toggle. It sets the profile language, the same one `rootcause lang` sets.
@@ -353,7 +358,7 @@ Implementation:
 
 - The app (Vite, React, TypeScript, plain CSS, hash routing) lives in `web/`. `scripts/build-web.sh` builds it into `web/dist` with `npm ci` from the committed lockfile. `go build -tags webdist` embeds it. Without the tag, `/` serves a translated page that says how to build it.
 - `internal/server` is a JSON API over the same engine, selector and store as the CLI. Both front ends call the shared steps in `internal/play` (next pick and seed, exercise texts, statistics rebuild). Exercise texts are filled server-side in the learner's language. UI strings come from `locales/*.json` through `/api/i18n/{lang}`, so there is one copy of every string.
-- Endpoints: `GET /api/overview`, `/api/exercises`, `/api/history`, `/api/session` (the active session, 204 if none), `/api/sessions/{id}`, `/api/i18n/{lang}`; `POST /api/start` (`{"exercise": ""}` starts the recommended one), `/api/hint`, `/api/check`, `/api/reset`, `/api/giveup`; `PUT /api/lang`. Actions name the session the page shows and are refused if it is no longer the active one.
+- Endpoints: `GET /api/overview`, `/api/exercises`, `/api/history`, `/api/session` (the active session, 204 if none), `/api/sessions/{id}`, `/api/i18n/{lang}`; `POST /api/start` (`{"exercise": ""}` starts the recommended one), `/api/hint`, `/api/check`, `/api/reset`, `/api/giveup`; `PUT /api/lang`; `GET /api/terminal` (WebSocket, v2). Actions name the session the page shows and are refused if it is no longer the active one.
 - The dashboard follows the CLI by polling: the open session every 2 seconds, the overview every few seconds and on focus. The two front ends share only the database.
 - The session view never contains the seed, variant values or derived values. Hints appear once revealed, and the walkthrough once the session is solved or given up.
 
@@ -376,13 +381,17 @@ Implementation:
 - The local server binds to 127.0.0.1 only.
 - It refuses any request whose Host header is not `127.0.0.1:PORT` or `localhost:PORT`, which blocks DNS rebinding.
 - Every `/api` request must carry the header `X-RootCause-Token`, a random token made per server process and written only into the served `index.html`. Another website cannot read that page, so it cannot call the API. The server sends no CORS headers, and every response forbids framing.
+- The web terminal's WebSocket (v2) cannot carry headers, so the browser offers the token as a subprotocol (`rootcause.token.<token>`) and the server answers with `rootcause.terminal` only. The request's `Origin` must be the dashboard itself, and the Host check applies as above.
+- The Content-Security-Policy allows scripts from the dashboard only. Styles may be inline, because xterm.js writes its layout into `<style>` elements.
 
 ### 13.2 v2 (Kubernetes) adds
 
-- The API ServiceAccount may only create, read, exec into and delete pods in `sandboxes`. Nothing else.
-- `sandboxes` has a default-deny NetworkPolicy, a ResourceQuota and a LimitRange.
-- Session pods: no service account token mounted, seccomp `RuntimeDefault`, no hostPath volumes.
-- Secrets never enter the repo. Local secrets live in git-ignored `.env` files. Cluster secrets are created outside git or sealed (decided in Phase 7).
+- The API ServiceAccount may only create, read, exec into and delete pods in `sandboxes`. Nothing else. It is a Role in `sandboxes`, not a ClusterRole: pods `create`, `get`, `list`, `delete`; `pods/exec` `create` and `get` (exec over WebSocket needs both); `pods/log` `get`. `scripts/k8s-prove.sh` checks a `kubectl auth can-i` matrix of allowed and denied actions.
+- `sandboxes` has a default-deny NetworkPolicy, a ResourceQuota (4 pods, 1 GiB, 2 CPUs) and a LimitRange. The only exception to the default deny: a check runner may connect to sandboxes on the internal network, and those accept connections from runners only.
+- `rootcause-system` is default-deny too. The API accepts 7300 and reaches Postgres, cluster DNS and the Kubernetes API server's address; dbt reaches Postgres and DNS; Postgres accepts the API and dbt.
+- Session pods: their own user namespace (`hostUsers: false`, so pod root is not node root), no service account token mounted, no service links, seccomp `RuntimeDefault`, no hostPath volumes, all capabilities dropped and the exercise's allowlist added back, no privilege escalation, memory and CPU limits, in-memory `emptyDir` for `tmpfs`, and no cluster DNS. The pause container is PID 1 and reaps stopped processes. The process limit is the kubelet's `pod-max-pids` (256), since Kubernetes has no per-pod setting.
+- Pod Security Admission enforces `restricted` in `rootcause-system` and `baseline` in `sandboxes`.
+- Secrets never enter the repo. Local secrets live in git-ignored `.env` files. Cluster secrets are created outside git: `scripts/k8s-up.sh` generates the Postgres password once into git-ignored `deploy/k8s/.env` and creates the Secret from files, so the password never appears in a manifest, on a command line or in output. Sealed secrets are for Phase 8 to decide, with GitOps.
 
 ### 13.3 Known limits (v1)
 
@@ -391,6 +400,13 @@ Implementation:
 - In `init: systemd` sandboxes, journald and tmp.mount are masked, because they need capabilities outside the allowlist. Service output is not kept in a journal.
 - `init: systemd` exercises need a host with cgroup v2 (the WSL2 default). The systemd in the exercise images does not boot on cgroup v1, so the CLI and the selftest refuse such an exercise there with a clear error.
 - Sandboxes on the internal network can reach each other. With one learner and at most two sandboxes, this is accepted.
+
+Known limits (v2, Kubernetes):
+
+- k3d runs its node containers privileged and in the host's user namespace, so node root is host root, whatever Docker's userns-remap says. Sandbox pods are isolated from it by `hostUsers: false`; system pods run as non-root users in their own user namespaces as well. Phase 9 reviews this gap (OQ-3).
+- A check runner may connect to any sandbox on the internal network, not only its own. With two sessions, one session's runner could reach the other session's sandbox. Per-session NetworkPolicies would need the API to manage NetworkPolicies, which section 13.2 does not allow.
+- `init: systemd` exercises (svc-02) do not run on Kubernetes: in a pod with its own user namespace the cgroup filesystem stays owned by host root, so systemd cannot boot. The CLI, the dashboard and the selftest refuse such an exercise there with a clear error. There is no restart before a check either (section 8.3).
+- The cluster's dbt CronJob runs `dbt build` and fails on dbt's own exit code; the node-count check of section 9.2 applies to builds the binary starts.
 
 ## 14. CI/CD
 
@@ -495,7 +511,7 @@ Done when: all workflows pass on main, and a PR with a broken exercise or a Co-a
 
 ### Phase 7: Kubernetes runtime
 - k3d cluster, namespaces, RBAC, NetworkPolicy and quotas.
-- Kubernetes runtime implementation. API and dashboard run in the cluster, with the ttyd terminal in the dashboard.
+- Kubernetes runtime implementation. API and dashboard run in the cluster, with the web terminal (exec into the session pod, see 8.2) in the dashboard.
 
 Done when: a session runs fully in the cluster from the browser, a sandbox pod can't reach the internet or `rootcause-system`, and the API ServiceAccount can't touch anything outside `sandboxes`.
 
@@ -505,7 +521,7 @@ Done when: a session runs fully in the cluster from the browser, a sandbox pod c
 Done when: a merged change reaches the cluster without manual kubectl.
 
 ### Phase 9: Hardening and presentation
-- OQ-3 resolved for v2, and the security model reviewed against section 13.
+- OQ-3 resolved for v2, and the security model reviewed against section 13, including the privileged k3d nodes that run as host root (section 13.3).
 - README with an architecture diagram and a 60-second demo recording.
 - Architecture decision records in `docs/adr/` for each locked decision.
 
@@ -526,8 +542,8 @@ The owner decides when the repo goes public. Ready means:
 |---|---|---|---|
 | OQ-1 | Service exercises usually rely on systemd, which often needs extra container privileges | Resolved in Phase 3: a) systemd as PID 1. It boots under the v1 security flags with no capability outside the allowlist, given in-memory `/run` and `/run/lock`. A unit that is started but not enabled is gone after `docker restart`; an enabled one is running again. journald and tmp.mount are masked (they need SETPCAP). Exercises opt in with `init: systemd` | Phase 3 |
 | OQ-2 | Docker manages resolv.conf inside containers | Resolved in Phase 3: `/etc/resolv.conf` is a bind mount. In-place writes persist for the session, but tools that replace the file (`sed -i`, some editors) fail with "Device or resource busy", and `docker restart` regenerates it. So net-01's fault lives in lookup order (`/etc/nsswitch.conf`) or the local DNS server config, and its fix never needs a resolv.conf edit | Phase 3 |
-| OQ-3 | The learner is root inside the sandbox | v1 resolved: userns-remap (`/etc/docker/daemon.json` with `{"userns-remap": "default"}`). Chosen over rootless Docker because it keeps the existing daemon and needs one config change. Verified with `docker info` showing `name=userns`; container root maps to host UID 100000. The CLI refuses to run sessions without userns or rootless mode. v2: gVisor or user namespaces | Phase 9 (v2) |
-| OQ-4 | Argo CD memory use on a 16 GB laptop next to the cluster | Argo CD, or Flux if too heavy | Phase 8 |
+| OQ-3 | The learner is root inside the sandbox | v1 resolved: userns-remap (`/etc/docker/daemon.json` with `{"userns-remap": "default"}`). Chosen over rootless Docker because it keeps the existing daemon and needs one config change. Verified with `docker info` showing `name=userns`; container root maps to host UID 100000. The CLI refuses to run sessions without userns or rootless mode. v2: since Phase 7 every sandbox pod has its own user namespace (`hostUsers: false`, verified on this kernel: pod root maps to a high unprivileged host UID). Open for Phase 9: the k3d nodes themselves run privileged as host root, and gVisor stays an option | Phase 9 (v2) |
+| OQ-4 | Argo CD memory use on a 16 GB laptop next to the cluster | Argo CD, or Flux if too heavy. Phase 7 measured WSL2 memory in use (`free -m`, without page cache): 0.9 GB without the cluster, 1.7 GB with the bare cluster (1 server, 2 agents), 2.1 GB at peak with Postgres, the API, a session and a selftest with its runner | Phase 8 |
 | OQ-5 | Public live demo | Recording only, or Oracle Cloud free tier (ARM, idle reclaim risk) | After v1 |
 | OQ-6 | Elo ratings | Keep 2 up / 2 down, or switch | When the catalog passes about 30 exercises |
 
@@ -557,9 +573,9 @@ RootCause/
 ├── dbt/                      dbt project; embed.go embeds it in the binary
 ├── deploy/
 │   ├── compose/              v1: Postgres (dbt runs with docker run, see 9.2)
-│   └── k8s/                  v2: manifests
+│   └── k8s/                  v2: k3d cluster config, manifests (kustomize), api/Dockerfile
 ├── locales/                  en.json, no.json
-├── scripts/                  validate-exercise.sh, build-web.sh, CI helpers
+├── scripts/                  validate-exercise.sh, build-web.sh, CI helpers, k8s-*.sh
 ├── .githooks/                commit-msg
 ├── .github/workflows/
 ├── docs/
