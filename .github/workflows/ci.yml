@@ -58,6 +58,10 @@ jobs:
         run: |
           shellcheck --version
           shellcheck scripts/*.sh .githooks/commit-msg exercises/*/*.sh
+      - name: admission policy shape
+        run: |
+          scripts/install-k8s-tools.sh "$RUNNER_TEMP/k8s-bin"
+          scripts/ci-check-admission.sh "$RUNNER_TEMP/k8s-bin/kubectl"
       - name: no credentials on command lines
         run: |
           scripts/ci-check-credential-args.sh --self-test
