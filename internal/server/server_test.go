@@ -209,6 +209,9 @@ func TestGuard(t *testing.T) {
 		if got := res.header.Get("X-Frame-Options"); got != "DENY" {
 			t.Errorf("%s: X-Frame-Options %q", c.name, got)
 		}
+		if got := res.header.Get("Content-Security-Policy"); got != server.ContentSecurityPolicy {
+			t.Errorf("%s: Content-Security-Policy %q", c.name, got)
+		}
 	}
 
 	var strs map[string]string
@@ -557,4 +560,19 @@ func loadTexts(exDir, id, lang string) (*exercise.I18n, error) {
 		return nil, errors.New("no texts")
 	}
 	return texts, nil
+}
+
+// The policy keeps scripts to the dashboard's own files; only styles may be
+// inline (the web terminal writes <style> elements).
+func TestContentSecurityPolicy(t *testing.T) {
+	csp := server.ContentSecurityPolicy
+	for _, want := range []string{"default-src 'self'", "frame-ancestors 'none'", "base-uri 'none'", "form-action 'none'"} {
+		if !strings.Contains(csp, want) {
+			t.Errorf("policy %q lacks %q", csp, want)
+		}
+	}
+	if strings.Contains(csp, "script-src") || strings.Contains(csp, "unsafe-eval") ||
+		strings.Count(csp, "'unsafe-inline'") != 1 || !strings.Contains(csp, "style-src 'self' 'unsafe-inline'") {
+		t.Errorf("policy %q: only style-src may allow inline, scripts must fall back to default-src 'self'", csp)
+	}
 }

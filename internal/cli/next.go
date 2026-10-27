@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"os"
 	"time"
 
 	"github.com/DIZAMU/RootCause/internal/play"
@@ -116,8 +117,17 @@ func (a *App) refreshAfterSession(ctx context.Context) {
 	}
 }
 
-// buildStats runs dbt against the app's database, under the stats lock.
+// EnvDBTMode set to "cronjob" means a Kubernetes CronJob builds the marts
+// (the cluster deployment, spec section 8.2), so the app never runs dbt
+// itself.
+const EnvDBTMode = "RC_DBT_MODE"
+
+// buildStats runs dbt against the app's database, under the stats lock. With
+// RC_DBT_MODE=cronjob it does nothing.
 func (a *App) buildStats(ctx context.Context) error {
+	if os.Getenv(EnvDBTMode) == "cronjob" {
+		return nil
+	}
 	return play.BuildStats(ctx, a.st, a.dsn)
 }
 

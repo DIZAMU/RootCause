@@ -37,6 +37,10 @@ const BindAddress = "127.0.0.1"
 // DefaultPort is the dashboard's port (spec section 8.1).
 const DefaultPort = 7300
 
+// ContentSecurityPolicy is sent with every response.
+const ContentSecurityPolicy = "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; " +
+	"frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+
 // TokenHeader carries the per-process token on every /api request.
 const TokenHeader = "X-RootCause-Token"
 
@@ -98,6 +102,14 @@ func Listen(port int) (net.Listener, error) {
 	return net.Listen("tcp", net.JoinHostPort(BindAddress, strconv.Itoa(port)))
 }
 
+// ListenAll opens the dashboard's listener on every address of port. Only the
+// cluster deployment uses it: the pod must accept connections from its
+// Service, and k3d publishes the port on the host's 127.0.0.1 only. Host and
+// token checks apply as on 127.0.0.1.
+func ListenAll(port int) (net.Listener, error) {
+	return net.Listen("tcp", net.JoinHostPort("", strconv.Itoa(port)))
+}
+
 // Serve serves on ln until ctx ends, then shuts down: it cancels requests
 // still running (a dbt build among them removes its container), waits for
 // them, and waits for background statistics rebuilds to stop.
@@ -152,8 +164,9 @@ func (s *Server) guard(port int, next http.Handler) http.Handler {
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("Referrer-Policy", "no-referrer")
-		h.Set("Content-Security-Policy",
-			"default-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
+		// Inline styles only: the web terminal (xterm.js) writes its layout
+		// and colors into <style> elements it creates. Scripts stay 'self'.
+		h.Set("Content-Security-Policy", ContentSecurityPolicy)
 		if !allowed[strings.ToLower(r.Host)] {
 			http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
 			return
@@ -161,6 +174,13 @@ func (s *Server) guard(port int, next http.Handler) http.Handler {
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			h.Set("Cache-Control", "no-store")
 			got := r.Header.Get(TokenHeader)
+			if r.URL.Path == TerminalPath {
+				if !sameOrigin(r) {
+					http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
+					return
+				}
+				got = protocolToken(r)
+			}
 			if subtle.ConstantTimeCompare([]byte(got), []byte(s.token)) != 1 {
 				http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
 				return

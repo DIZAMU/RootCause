@@ -289,7 +289,26 @@ func extract(fsys fs.FS) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	err = fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, err error) error {
+	err = writeTree(fsys, dir)
+	if err == nil {
+		err = os.Chmod(dir, 0o755) // MkdirTemp creates it 0700
+	}
+	if err != nil {
+		os.RemoveAll(dir)
+		return "", err
+	}
+	return dir, nil
+}
+
+// WriteProject writes the embedded dbt project into dir, which must exist.
+// The cluster's dbt CronJob runs it from there (spec section 8.2).
+func WriteProject(dir string) error {
+	return writeTree(dbtproject.FS, dir)
+}
+
+// writeTree copies fsys into dir: directories 0755, files 0644.
+func writeTree(fsys fs.FS, dir string) error {
+	return fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -303,14 +322,6 @@ func extract(fsys fs.FS) (string, error) {
 		}
 		return os.WriteFile(dst, data, 0o644)
 	})
-	if err == nil {
-		err = os.Chmod(dir, 0o755) // MkdirTemp creates it 0700
-	}
-	if err != nil {
-		os.RemoveAll(dir)
-		return "", err
-	}
-	return dir, nil
 }
 
 // LogDir is where the dbt.log of failed builds is saved.

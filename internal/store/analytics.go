@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
@@ -19,6 +20,20 @@ import (
 func missingRelation(err error) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && (pgErr.Code == "42P01" || pgErr.Code == "3F000")
+}
+
+// StatsBuiltAt returns when the latest dbt build made the marts
+// (analytics.mart_build_info), or nil if dbt never ran.
+func (s *Store) StatsBuiltAt(ctx context.Context) (*time.Time, error) {
+	var at time.Time
+	err := s.pool.QueryRow(ctx, `SELECT built_at FROM analytics.mart_build_info`).Scan(&at)
+	if missingRelation(err) || errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("stats build time: %w", err)
+	}
+	return &at, nil
 }
 
 // MartsFresh reports whether the marts hold the learner's latest finished

@@ -2,7 +2,7 @@
 //
 // The play commands are init, next, start, shell, ticket, hint, check, reset,
 // giveup, status, list, stats, serve (the dashboard) and lang. The developer
-// commands validate, vars and selftest need no database.
+// commands validate, vars, selftest and dbt-project need no database.
 package main
 
 import (
@@ -12,8 +12,8 @@ import (
 	"strings"
 
 	"github.com/DIZAMU/RootCause/internal/cli"
+	"github.com/DIZAMU/RootCause/internal/dbt"
 	"github.com/DIZAMU/RootCause/internal/exercise"
-	"github.com/DIZAMU/RootCause/internal/runtime/docker"
 	"github.com/DIZAMU/RootCause/internal/session"
 )
 
@@ -33,6 +33,8 @@ func main() {
 		os.Exit(cmdVars(args))
 	case "selftest":
 		os.Exit(cmdSelfTest(ctx, args))
+	case "dbt-project":
+		os.Exit(cmdDBTProject(args))
 	case "init":
 		os.Exit(cmdInit(ctx))
 	default:
@@ -115,20 +117,35 @@ func cmdValidate(args []string) int {
 }
 
 // cmdSelfTest runs an exercise's unsolved and solved scenarios in real
-// sandboxes, with the same flags a session uses. It needs Docker, not the
-// database. scripts/validate-exercise.sh calls it.
+// sandboxes, with the same flags a session uses, on the runtime RC_RUNTIME
+// selects. It needs that runtime, not the database.
+// scripts/validate-exercise.sh calls it.
 func cmdSelfTest(ctx context.Context, args []string) int {
 	seed, dir, ok := seedAndDir("selftest", args)
 	if !ok {
 		return 2
 	}
-	rt, err := docker.New()
+	be, err := cli.NewBackend(ctx)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(os.Stderr, cli.English(err))
 		return 1
 	}
-	if err := session.SelfTest(ctx, rt, rt, dir, seed, os.Stdout); err != nil {
-		fmt.Fprintln(os.Stderr, "FAIL:", err)
+	if err := session.SelfTest(ctx, be.Runtime, be.Builder, dir, seed, os.Stdout); err != nil {
+		fmt.Fprintln(os.Stderr, "FAIL:", cli.English(err))
+		return 1
+	}
+	return 0
+}
+
+// cmdDBTProject writes the embedded dbt project into an existing directory.
+// The cluster's dbt CronJob runs it as an init container (spec section 8.2).
+func cmdDBTProject(args []string) int {
+	if len(args) != 1 {
+		fmt.Fprintln(os.Stderr, "dbt-project: expected exactly one directory")
+		return 2
+	}
+	if err := dbt.WriteProject(args[0]); err != nil {
+		fmt.Fprintln(os.Stderr, "dbt-project:", err)
 		return 1
 	}
 	return 0

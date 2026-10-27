@@ -43,6 +43,7 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/giveup", s.handleGiveUp)
 	mux.HandleFunc("PUT /api/lang", s.handleSetLang)
 	mux.HandleFunc("GET /api/i18n/{lang}", s.handleStrings)
+	mux.HandleFunc("GET "+TerminalPath, s.handleTerminal)
 }
 
 // --- responses ---------------------------------------------------------------
@@ -115,9 +116,10 @@ type reviewJSON struct {
 }
 
 type statsJSON struct {
-	Fresh    bool   `json:"fresh"`
-	Updating bool   `json:"updating"`
-	Error    string `json:"error"` // the last rebuild's failure, translated; "" if none
+	Fresh    bool       `json:"fresh"`
+	Updating bool       `json:"updating"`
+	Error    string     `json:"error"`    // the last rebuild's failure, translated; "" if none
+	BuiltAt  *time.Time `json:"built_at"` // when dbt last built the marts; null if never
 }
 
 // handleOverview is the home view: the active session, a preview of the next
@@ -188,6 +190,10 @@ func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	out.Stats = statsJSON{Fresh: fresh, Updating: s.stats.busy()}
+	if out.Stats.BuiltAt, err = s.cfg.Store.StatsBuiltAt(ctx); err != nil {
+		s.failErr(w, lang, err)
+		return
+	}
 	if err := s.stats.err(); err != nil {
 		out.Stats.Error = plainText(s.cfg.Describe(lang, err))
 	}
