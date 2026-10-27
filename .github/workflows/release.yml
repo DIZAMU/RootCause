@@ -1,0 +1,95 @@
+# Release (spec section 14): on a vX.Y.Z tag on main, validate every exercise,
+# then build the API image and push it to ghcr.io/dizamu/rootcause-api under
+# that tag only. The job summary has the digest; the owner pins it in
+# deploy/k8s/kustomization.yaml in a pull request, and Argo CD deploys it
+# once that is merged. Nothing here commits or pushes to the repository.
+#
+# GITHUB_TOKEN is the only credential. packages: write is granted to the push
+# job alone.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: release-check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # origin/main, for the on-main check
+          persist-credentials: false
+      - name: tag is vX.Y.Z, on main, and new
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: scripts/ci-release-image.sh check-tag "$TAG" "$GITHUB_SHA"
+
+  validate:
+    needs: check
+    permissions:
+      contents: read
+    uses: ./.github/workflows/exercises.yml
+
+  push:
+    name: release-push
+    needs: [check, validate]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: web/.nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: build the API image
+        env:
+          TAG: ${{ github.ref_name }}
+        run: scripts/build-api-image.sh "ghcr.io/dizamu/rootcause-api:$TAG" "$TAG"
+      - name: push to GHCR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          image="ghcr.io/dizamu/rootcause-api:$TAG"
+          printf '%s' "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker push "$image"
+          docker logout ghcr.io
+          digest="$(docker inspect --format '{{index .RepoDigests 0}}' "$image")"
+          digest="${digest#*@}"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "no digest for $image" >&2; exit 1; }
+          {
+            echo "## ghcr.io/dizamu/rootcause-api:$TAG"
+            echo
+            echo "Digest: \`$digest\`"
+            echo
+            echo "To deploy it, set this in deploy/k8s/kustomization.yaml in a pull request:"
+            echo
+            echo '```yaml'
+            echo "images:"
+            echo "  - name: rootcause/api"
+            echo "    newName: ghcr.io/dizamu/rootcause-api"
+            echo "    digest: $digest"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

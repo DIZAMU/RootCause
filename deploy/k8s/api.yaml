@@ -39,6 +39,10 @@ spec:
         rootcause.instance: main
     spec:
       serviceAccountName: rootcause-api
+      # The image is private on GHCR. scripts/k8s-up.sh creates this Secret
+      # from the owner's token; it is never in git.
+      imagePullSecrets:
+        - name: ghcr-pull
       # The kubernetes runtime needs the service account's token; the
       # ServiceAccount itself does not mount it anywhere else.
       automountServiceAccountToken: true
@@ -52,8 +56,9 @@ spec:
           type: RuntimeDefault
       containers:
         - name: api
-          image: rootcause/api:local
-          imagePullPolicy: Never
+          # kustomization.yaml pins the release by digest.
+          image: rootcause/api
+          imagePullPolicy: IfNotPresent
           args: [serve, --listen-all, --port, "7300"]
           env:
             - name: RC_RUNTIME

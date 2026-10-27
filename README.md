@@ -30,15 +30,39 @@ Exercises that boot systemd (such as svc-02) need a host with cgroup v2. WSL2 us
 
 ### Kubernetes (v2)
 
-The same sessions can run in a local k3d cluster (spec section 8.2): the API and dashboard, Postgres and dbt in the namespace `rootcause-system`, one pod per session in `sandboxes`, and the terminal in the browser.
+The same sessions can run in a local k3d cluster (spec section 8.2): the API and dashboard, Postgres and dbt in the namespace `rootcause-system`, one pod per session in `sandboxes`, and the terminal in the browser. Argo CD in `argocd` deploys the cluster from `main` (see GitOps below).
 
 1. Run `scripts/install-k8s-tools.sh`. It puts pinned, checksum-verified `k3d` and `kubectl` in `~/.local/bin`, without sudo.
-2. Run `scripts/k8s-up.sh`. It creates the cluster (1 server, 2 agents), builds and imports the images, generates the database password into git-ignored `deploy/k8s/.env`, and deploys everything. Re-run it after a change.
+2. Run `scripts/k8s-up.sh --dev` to try the working tree: it creates the cluster (1 server, 2 agents), builds the API image and the exercise images and imports them, generates the database password into git-ignored `deploy/k8s/.env`, and applies `deploy/k8s-dev`. Re-run it after a change. If Argo CD is installed, `--dev` turns its automated sync off first.
 3. Open http://localhost:7300. Start an exercise and work in the terminal on the exercise page.
 4. Run `scripts/k8s-prove.sh` to check the isolation: the API's permissions, the network policies, and one full session through the dashboard. That session plays on a separate database, `rootcause_cluster_test`, through a second API pod, and leaves the real one untouched.
-5. Run `scripts/k8s-down.sh` to stop the cluster and free memory; its data stays. `scripts/k8s-dbt.sh` rebuilds the statistics at once instead of waiting for the 10-minute CronJob.
+5. Run `scripts/k8s-down.sh` to stop the cluster and free memory; its data stays. `scripts/k8s-dbt.sh` rebuilds the statistics at once instead of waiting for the 10-minute CronJob. `scripts/k8s-memory.sh` prints the memory each node and container uses.
 
 `RC_RUNTIME=kubernetes` points the CLI at the cluster, for example `RC_RUNTIME=kubernetes scripts/validate-exercise.sh perm-01-shared-folder 1`. svc-02 boots systemd, which does not run in a pod, so it is refused there (spec section 13.3).
+
+### GitOps (v2)
+
+Without `--dev`, `scripts/k8s-up.sh` installs Argo CD core (pinned, checksum-verified) and the Application in `deploy/argocd`, which syncs `deploy/k8s` from `main` with automated sync, prune and self-heal. The cluster then runs the API image pinned by digest in `deploy/k8s/kustomization.yaml`, pulled from the private package `ghcr.io/dizamu/rootcause-api`. Exercise images are still built and imported by `k8s-up.sh`; sandbox pods never pull.
+
+A change reaches the cluster like this, with no kubectl by hand:
+
+1. Merge the change to `main`.
+2. Tag it and push the tag. `git tag -s` signs it with the same SSH key as the commits; check before you push:
+   ```bash
+   git checkout main && git pull --ff-only
+   git tag -s v0.8.0 -m v0.8.0
+   git tag -v v0.8.0
+   git push origin v0.8.0
+   ```
+   `release.yml` checks that the tag is `vX.Y.Z` on `main` and new, validates every exercise, builds the API image and pushes it under that tag only. Its job summary shows the digest.
+3. In a pull request, set that digest in `deploy/k8s/kustomization.yaml` (`images:`, digest only). `ci-release-image` checks that it is a pushed release. When it is merged, Argo CD rolls it out.
+
+Check the result with `scripts/k8s-gitops-prove.sh` (set `RC_RELEASE_DIGEST` to the digest from the job summary to compare it too): the Application is Synced and Healthy at `main` with self-heal on, the API runs the pinned digest, a change made by hand is reverted, and the project refuses other namespaces and repositories. It fails while a `--dev` run has turned automated sync off.
+
+Two credentials stay outside the repo, in `~/.config/rootcause` (chmod 600). `k8s-up.sh` turns them into Secrets and never prints them:
+
+- `argocd-deploy-key`: the private half of a read-only deploy key for this repository. Make it with `ssh-keygen -t ed25519 -N '' -C rootcause-argocd -f ~/.config/rootcause/argocd-deploy-key`, then add the `.pub` file under Settings, Deploy keys, with write access off. The key has no passphrase, so it is unencrypted on disk. That is acceptable for a read-only key to one private repository, and the Secret in the cluster holds it in plain text anyway.
+- `ghcr-token`: a personal access token (classic) with only the `read:packages` scope and a 90-day expiry, made under Settings, Developer settings, Personal access tokens, Tokens (classic). GitHub Packages accepts only classic tokens. A classic `read:packages` token can read every package your account can see, not just this one. When it expires, make a new one, save it to the same file and run `k8s-up.sh` again.
 
 ## Tests
 
@@ -59,14 +83,15 @@ go test -count=1 ./...
 
 ## CI
 
-GitHub Actions runs four workflows (spec section 14). Every action is pinned by commit SHA, and every job gets read-only access to the repository and nothing else.
+GitHub Actions runs five workflows (spec section 14). Every action is pinned by commit SHA, and every job gets read-only access to the repository and nothing else, except `packages: read` on `ci-release-image` and `release-check`, and `packages: write` on `release-push`.
 
 | Workflow | Check name | Does |
 |---|---|---|
-| `ci.yml` | `ci-checks`, `ci-test` | gofmt, go vet, golangci-lint, shellcheck, i18n parity, the dashboard build, and every Go test with Postgres and Docker. Fails if any test is skipped |
-| `exercises.yml` | `exercises` | Validates the changed exercises with seeds 1, 2 and 3. All of them on tags `v*` and on manual runs |
+| `ci.yml` | `ci-checks`, `ci-test`, `ci-release-image` | gofmt, go vet, golangci-lint, shellcheck, i18n parity, the dashboard build, and every Go test with Postgres and Docker. Fails if any test is skipped. `ci-release-image` checks that the digest in `deploy/k8s/kustomization.yaml` is a pushed `vX.Y.Z` release, or the zero placeholder |
+| `exercises.yml` | `exercises` | Validates the changed exercises with seeds 1, 2 and 3. All of them on manual runs, and when `release.yml` calls it |
 | `dbt.yml` | `dbt` | dbt build against a Postgres service container, when the dbt project or its inputs changed |
 | `commit-policy.yml` | `commit-policy` | Rejects Co-authored-by trailers, tool attribution lines, author emails other than the owner's, and commits GitHub does not show as Verified |
+| `release.yml` | `release-check`, `exercises`, `release-push` | On a tag `v*`: the tag must be `vX.Y.Z` on `main` and not pushed before; every exercise is validated; then the API image is pushed to GHCR under that tag. It never commits |
 
 Run the same commit check locally with `scripts/check-commit-policy.sh origin/main HEAD`.
 
@@ -78,7 +103,7 @@ On the free plan, branch protection does not apply to private repositories, so a
 - Restrict deletions, and block force pushes.
 - Require a pull request before merging, with merge commits only (squash and rebase drop the SSH signatures).
 - Require signed commits.
-- Require status checks to pass, with the branch up to date: `ci-checks`, `ci-test`, `exercises`, `dbt`, `commit-policy`. Every workflow starts on every PR and decides inside the job what to run, so none of these checks stays pending.
+- Require status checks to pass, with the branch up to date: `ci-checks`, `ci-test`, `ci-release-image`, `exercises`, `dbt`, `commit-policy`. Every workflow starts on every PR and decides inside the job what to run, so none of these checks stays pending.
 
 Known gap to close when the ruleset goes on: the workflows, `scripts/check-commit-policy.sh` and `.githooks/commit-msg` run from the PR's own commits, so a PR could weaken the checks that judge it. Before the repo goes public, make `commit-policy.yml` check out the base branch's copy of the script and hook, and require review of changes under `.github/`, `scripts/` and `.githooks/`.
 

@@ -1,0 +1,42 @@
+# The Argo CD project RootCause's Application belongs to (spec section 13.2).
+# It limits what a bad commit on main can make Argo CD do: one source repo,
+# the two RootCause namespaces on this cluster only, no cluster-wide objects
+# at all (the namespaces come from scripts/k8s-up.sh), and only the kinds
+# deploy/k8s uses. Argo CD's core install has no default project, so an
+# Application outside this one syncs nothing.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: rootcause
+  namespace: argocd
+spec:
+  description: RootCause in the local cluster
+  sourceRepos:
+    - git@github.com:DIZAMU/RootCause.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: rootcause-system
+    - server: https://kubernetes.default.svc
+      namespace: sandboxes
+  clusterResourceWhitelist: []
+  namespaceResourceWhitelist:
+    - group: ""
+      kind: Service
+    - group: ""
+      kind: ServiceAccount
+    - group: ""
+      kind: ResourceQuota
+    - group: ""
+      kind: LimitRange
+    - group: apps
+      kind: Deployment
+    - group: apps
+      kind: StatefulSet
+    - group: batch
+      kind: CronJob
+    - group: networking.k8s.io
+      kind: NetworkPolicy
+    - group: rbac.authorization.k8s.io
+      kind: Role
+    - group: rbac.authorization.k8s.io
+      kind: RoleBinding

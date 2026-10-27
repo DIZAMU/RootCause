@@ -1,14 +1,23 @@
-# Everything in the cluster except the rootcause-db Secret and the
-# api-to-apiserver NetworkPolicy, which scripts/k8s-up.sh creates (the first
-# holds the generated password, the second the API server's address).
+# Everything Argo CD syncs from main into the cluster (spec sections 8.2 and
+# 14). Not in here, because scripts/k8s-up.sh creates them: the namespaces
+# (namespaces.yaml; Argo CD may not create cluster-wide objects), the
+# rootcause-db and ghcr-pull Secrets (they hold secrets) and the
+# api-to-apiserver NetworkPolicy (it holds the API server's address).
 # k3d.yaml is the cluster itself, not a resource.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - namespaces.yaml
   - rbac.yaml
   - sandboxes.yaml
   - system-network.yaml
   - postgres.yaml
   - api.yaml
   - dbt.yaml
+# The release the cluster runs, by digest only. release.yml prints the digest
+# of each vX.Y.Z it pushes; the owner puts it here in a pull request, and
+# ci.yml checks that it is a pushed release. The zero digest means no release
+# has been deployed yet: scripts/k8s-up.sh then needs --dev.
+images:
+  - name: rootcause/api
+    newName: ghcr.io/dizamu/rootcause-api
+    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000

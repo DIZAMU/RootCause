@@ -27,6 +27,8 @@ spec:
             app: rootcause-dbt
         spec:
           restartPolicy: Never
+          imagePullSecrets:
+            - name: ghcr-pull
           automountServiceAccountToken: false
           enableServiceLinks: false
           hostUsers: false
@@ -38,8 +40,9 @@ spec:
               type: RuntimeDefault
           initContainers:
             - name: project
-              image: rootcause/api:local
-              imagePullPolicy: Never
+              # The API image, pinned in kustomization.yaml.
+              image: rootcause/api
+              imagePullPolicy: IfNotPresent
               args: [dbt-project, /project]
               resources:
                 limits:
