@@ -13,8 +13,9 @@
 # Example: scripts/ci-go-test.sh --require TestScriptedSelection -tags webdist ./...
 set -euo pipefail
 
-# Skipped unless asked for on purpose (RC_DBT_STRESS=1).
-allowed_skips=" TestBuildStress "
+# Skipped unless asked for on purpose: RC_DBT_STRESS=1, or RC_CLUSTER_URL
+# for the session against the deployed cluster (scripts/k8s-prove.sh).
+allowed_skips=" TestBuildStress TestClusterSession "
 
 required=()
 while [ "${1:-}" = "--require" ]; do

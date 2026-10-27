@@ -1,0 +1,19 @@
+# The two namespaces of spec section 8.2. Pod Security Admission enforces the
+# restricted profile on the system workloads and baseline on sandboxes: the
+# learner is root in a sandbox pod (in its own user namespace), which the
+# restricted profile forbids.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rootcause-system
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: sandboxes
+  labels:
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce-version: latest

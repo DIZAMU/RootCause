@@ -11,12 +11,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/DIZAMU/RootCause/internal/i18n"
 	"github.com/DIZAMU/RootCause/internal/play"
-	"github.com/DIZAMU/RootCause/internal/runtime/docker"
 	"github.com/DIZAMU/RootCause/internal/session"
 	"github.com/DIZAMU/RootCause/internal/store"
 	"github.com/DIZAMU/RootCause/locales"
@@ -28,7 +28,7 @@ type App struct {
 	dsn     string // the database the store uses; dbt builds against it
 	st      *store.Store
 	eng     *session.Engine
-	rt      *docker.Runtime
+	runtime string // the runtime RC_RUNTIME selects
 	bundle  *i18n.Bundle
 	learner store.Learner
 	out     *os.File
@@ -57,7 +57,7 @@ func NewApp(ctx context.Context) (*App, error) {
 	if err != nil {
 		return failed(err)
 	}
-	st, err := store.Open(ctx, dsn)
+	st, err := openStore(ctx, dsn)
 	if err != nil {
 		return failed(fail("error.needs_init", nil))
 	}
@@ -75,28 +75,47 @@ func NewApp(ctx context.Context) (*App, error) {
 		return failed(err)
 	}
 	lang = learner.Lang
-	rt, err := docker.New()
+	be, err := NewBackend(ctx)
 	if err != nil {
 		st.Close()
-		return failed(fail("error.no_docker", err))
-	}
-	// Refuse to run sessions when root in a sandbox would be root on the host
-	// (spec section 13.1, OQ-3).
-	if err := rt.CheckIsolation(ctx); err != nil {
-		st.Close()
-		if errors.Is(err, docker.ErrNotIsolated) {
-			return failed(fail("error.not_isolated", nil))
-		}
 		return failed(err)
 	}
-	eng := session.New(rt, rt, rt, st, filepath.Join(root, "exercises"))
+	rtName, _ := RuntimeName()
+	eng := session.New(be.Runtime, be.Builder, be.Sheller, st, filepath.Join(root, "exercises"))
 
 	// Expire any sessions past their TTL before running the command. v1 has no
 	// long-running daemon, so this lazy pass keeps sandboxes from lingering.
 	// Best-effort: a reap error must not block the command.
 	_, _ = session.NewReaper(eng, st, 0).ReapOnce(ctx)
 
-	return &App{root: root, dsn: dsn, st: st, eng: eng, rt: rt, bundle: bundle, learner: learner, out: os.Stdout}, nil
+	return &App{root: root, dsn: dsn, st: st, eng: eng, runtime: rtName, bundle: bundle, learner: learner, out: os.Stdout}, nil
+}
+
+// EnvDBWait is how many seconds NewApp keeps trying to reach the database
+// before it gives up (default 0: one try). The cluster deployment sets it,
+// because a new pod's network policy is in place only a moment after the pod
+// starts.
+const EnvDBWait = "RC_DB_WAIT_SECONDS"
+
+// openStore opens the store, polling for up to RC_DB_WAIT_SECONDS until the
+// database answers.
+func openStore(ctx context.Context, dsn string) (*store.Store, error) {
+	wait, err := strconv.Atoi(os.Getenv(EnvDBWait))
+	if err != nil || wait < 0 {
+		wait = 0
+	}
+	deadline := time.Now().Add(time.Duration(wait) * time.Second)
+	for {
+		st, err := store.Open(ctx, dsn)
+		if err == nil || !time.Now().Before(deadline) {
+			return st, err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, err
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
 }
 
 // Close releases resources.

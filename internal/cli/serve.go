@@ -24,10 +24,13 @@ const reapInterval = time.Minute
 // Serve runs the local dashboard on 127.0.0.1 (spec sections 10 and 11) until
 // Ctrl-C. It reaps expired sessions on a ticker while it runs.
 func (a *App) Serve(ctx context.Context, args []string) error {
-	port, ok := parsePort(args)
+	port, listenAll, ok := parseServe(args)
 	if !ok {
 		a.say("serve.usage", nil)
 		return nil
+	}
+	if err := checkListenAll(listenAll, a.runtime); err != nil {
+		return err
 	}
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -46,7 +49,11 @@ func (a *App) Serve(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	ln, err := server.Listen(port)
+	listen := server.Listen
+	if listenAll {
+		listen = server.ListenAll
+	}
+	ln, err := listen(port)
 	if err != nil {
 		return failWith("serve.listen_failed", map[string]string{"port": strconv.Itoa(port)}, err)
 	}
@@ -71,17 +78,33 @@ func (a *App) Serve(ctx context.Context, args []string) error {
 	return nil
 }
 
-// parsePort reads "[--port N]".
-func parsePort(args []string) (int, bool) {
-	switch {
-	case len(args) == 0:
-		return server.DefaultPort, true
-	case len(args) == 2 && args[0] == "--port":
-		p, err := strconv.Atoi(args[1])
-		if err != nil || p < 1 || p > 65535 {
-			return 0, false
+// parseServe reads "[--port N] [--listen-all]".
+func parseServe(args []string) (port int, listenAll bool, ok bool) {
+	port = server.DefaultPort
+	for i := 0; i < len(args); i++ {
+		switch {
+		case args[i] == "--listen-all":
+			listenAll = true
+		case args[i] == "--port" && i+1 < len(args):
+			p, err := strconv.Atoi(args[i+1])
+			if err != nil || p < 1 || p > 65535 {
+				return 0, false, false
+			}
+			port = p
+			i++
+		default:
+			return 0, false, false
 		}
-		return p, true
 	}
-	return 0, false
+	return port, listenAll, true
+}
+
+// checkListenAll refuses --listen-all unless the runtime is kubernetes: only
+// the cluster deployment listens beyond 127.0.0.1 (spec section 13.1), behind
+// k3d's port mapping on the host's 127.0.0.1.
+func checkListenAll(listenAll bool, runtimeName string) error {
+	if listenAll && runtimeName != "kubernetes" {
+		return fail("serve.listen_all_refused", nil)
+	}
+	return nil
 }

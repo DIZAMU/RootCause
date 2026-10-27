@@ -674,6 +674,29 @@ button.small {
     box-shadow: 0 0 0 6px transparent;
   }
 }
+/* Web terminal (v2): xterm.js draws the screen; the card frames it. */
+.web-terminal {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.web-terminal-screen {
+  position: relative;
+  padding: 8px;
+  border-radius: var(--radius);
+  background: #000;
+  overflow: hidden;
+}
+
+/* Measures one character cell; never visible. Same font as the terminal. */
+.xterm-char-probe {
+  position: absolute;
+  visibility: hidden;
+  white-space: pre;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 14px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .spinner,
   .pulse {

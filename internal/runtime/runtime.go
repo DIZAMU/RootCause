@@ -11,7 +11,7 @@ import (
 )
 
 // Runtime creates and controls sandboxes. The v1 implementation is
-// internal/runtime/docker; v2 will add internal/runtime/kubernetes.
+// internal/runtime/docker; v2 adds internal/runtime/kubernetes.
 type Runtime interface {
 	Create(ctx context.Context, spec SandboxSpec) (Sandbox, error)
 	Exec(ctx context.Context, id string, cmd []string, stdin io.Reader) (ExecResult, error)
@@ -65,9 +65,23 @@ type ExecResult struct {
 
 // Sheller is an optional, runtime-specific capability: open an interactive
 // shell wired to the caller's own terminal. It is not part of Runtime because
-// v1 (docker exec -it) and v2 (ttyd in the browser) do it in unrelated ways.
+// v1 (docker exec -it) and v2 (a terminal in the browser) do it in unrelated
+// ways.
 type Sheller interface {
 	Shell(ctx context.Context, id string, cmd []string) error
+}
+
+// Terminal is an optional capability: run a command in a sandbox with a
+// terminal, wired to stdin and stdout, until it exits or ctx ends. sizes
+// carries the terminal's size whenever it changes. The dashboard's web
+// terminal (v2) uses it.
+type Terminal interface {
+	Terminal(ctx context.Context, id string, cmd []string, stdin io.Reader, stdout io.Writer, sizes <-chan TermSize) error
+}
+
+// TermSize is a terminal's size in character cells.
+type TermSize struct {
+	Cols, Rows uint16
 }
 
 // Diagnoser is an optional capability: describe a sandbox that did not become
@@ -78,7 +92,8 @@ type Diagnoser interface {
 }
 
 // SystemdChecker is an optional capability: report whether the host can boot
-// systemd as PID 1 in a sandbox. It returns ErrNeedsCgroupV2 if it cannot.
+// systemd as PID 1 in a sandbox. It returns ErrNeedsCgroupV2 or
+// ErrSystemdUnsupported if it cannot.
 type SystemdChecker interface {
 	CheckSystemd(ctx context.Context) error
 }
@@ -86,3 +101,7 @@ type SystemdChecker interface {
 // ErrNeedsCgroupV2 means the host runs cgroup v1, where the systemd in the
 // exercise images refuses to boot.
 var ErrNeedsCgroupV2 = errors.New("this exercise needs a host with cgroup v2")
+
+// ErrSystemdUnsupported means the runtime cannot boot systemd as PID 1 in a
+// sandbox at all, whatever the host runs.
+var ErrSystemdUnsupported = errors.New("this runtime cannot boot systemd in a sandbox")

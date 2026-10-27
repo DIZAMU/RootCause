@@ -42,6 +42,7 @@ type sessionJSON struct {
 	LevelChange  *levelChangeRow `json:"level_change"`
 	Walkthrough  string          `json:"walkthrough"`
 	ShellCommand string          `json:"shell_command"`
+	Terminal     bool            `json:"terminal"`        // the dashboard has a web terminal (v2)
 	Check        *checkJSON      `json:"check,omitempty"` // set on the response to a check
 }
 
@@ -107,6 +108,7 @@ func (s *Server) sessionView(ctx context.Context, lang string, sess store.Sessio
 		Checks:       []checkRunJSON{},
 		Events:       []eventJSON{},
 		ShellCommand: ShellCommand,
+		Terminal:     s.cfg.Engine.HasTerminal(),
 	}
 	for tier := 1; tier <= sess.HintsRevealed && tier <= len(texts.Hints); tier++ {
 		v.Hints = append(v.Hints, hintJSON{Tier: tier, Text: i18n.Fill(texts.Hints[tier-1], vars)})

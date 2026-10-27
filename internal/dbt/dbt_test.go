@@ -52,8 +52,8 @@ func TestExpectedNodesOfProject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n != 55 {
-		t.Errorf("ExpectedNodes = %d, want 55 (8 models, 3 singular tests, 44 generic tests)", n)
+	if n != 57 {
+		t.Errorf("ExpectedNodes = %d, want 57 (9 models, 3 singular tests, 45 generic tests)", n)
 	}
 }
 

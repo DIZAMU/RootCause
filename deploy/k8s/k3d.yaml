@@ -1,0 +1,36 @@
+# The local v2 cluster (spec section 8.2): 1 server and 2 agents. Created by
+# scripts/k8s-up.sh with `k3d cluster create --config`.
+#
+# The dashboard is published on the host's 127.0.0.1:7300 only, through the
+# NodePort of the rootcause-api Service. traefik, metrics-server and servicelb
+# are disabled: nothing uses them. local-path storage stays for Postgres.
+apiVersion: k3d.io/v1alpha5
+kind: Simple
+metadata:
+  name: rootcause
+servers: 1
+agents: 2
+image: rancher/k3s:v1.37.1-k3s1@sha256:ca7f37d993d82ef0dcdcfecb2e0e2618ea541dbaffc620c8cedebe01a82acd0d
+ports:
+  - port: 127.0.0.1:7300:30730
+    nodeFilters:
+      - server:0:direct
+options:
+  k3d:
+    wait: true
+    timeout: "180s"
+    disableLoadbalancer: true
+  k3s:
+    extraArgs:
+      - arg: --disable=traefik,metrics-server,servicelb
+        nodeFilters:
+          - server:*
+      # Kubernetes has no per-pod process limit; the kubelet applies this one
+      # to every pod (spec section 13.1's limit of 256).
+      - arg: --kubelet-arg=pod-max-pids=256
+        nodeFilters:
+          - server:*
+          - agent:*
+  kubeconfig:
+    updateDefaultKubeconfig: true
+    switchCurrentContext: true

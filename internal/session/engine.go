@@ -11,11 +11,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/DIZAMU/RootCause/internal/exercise"
@@ -30,6 +32,8 @@ var (
 	ErrGiveUpTooEarly = errors.New("give up is only available after hint 3")
 	// ErrNoShell means the runtime cannot open an interactive shell.
 	ErrNoShell = errors.New("runtime has no interactive shell")
+	// ErrSessionEnded means the session is no longer active.
+	ErrSessionEnded = errors.New("the session has ended")
 )
 
 // Builder builds an exercise image. The docker runtime implements it.
@@ -589,6 +593,65 @@ func (e *Engine) Shell(ctx context.Context, sessionID string) error {
 		return ErrNoShell
 	}
 	return e.sheller.Shell(ctx, sess.SandboxID, []string{"/bin/bash"})
+}
+
+// terminalPoll is how often a web terminal checks that its session is still
+// active.
+const terminalPoll = time.Second
+
+// HasTerminal reports whether the runtime offers a web terminal.
+func (e *Engine) HasTerminal() bool {
+	_, ok := e.rt.(runtime.Terminal)
+	return ok
+}
+
+// Terminal runs a login shell in an active session's sandbox, wired to stdin
+// and stdout, for the dashboard's web terminal (v2). It returns when the
+// shell exits or ctx ends, and ends the shell with ErrSessionEnded as soon as
+// the session is no longer active (solved, given up, expired or voided), so a
+// terminal never outlives its session.
+func (e *Engine) Terminal(ctx context.Context, sessionID string, stdin io.Reader, stdout io.Writer, sizes <-chan runtime.TermSize) error {
+	term, ok := e.rt.(runtime.Terminal)
+	if !ok {
+		return ErrNoShell
+	}
+	sess, err := e.st.SessionByID(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	if sess.Status != "active" {
+		return ErrSessionEnded
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var ended atomic.Bool
+	go func() {
+		t := time.NewTicker(terminalPoll)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+			}
+			s, err := e.st.SessionByID(ctx, sessionID)
+			if err == nil && s.Status != "active" {
+				ended.Store(true)
+				cancel()
+				return
+			}
+		}
+	}()
+	err = term.Terminal(ctx, sess.SandboxID, []string{"/bin/bash", "-l"}, stdin, stdout, sizes)
+	if ended.Load() {
+		return ErrSessionEnded
+	}
+	// Ending a session destroys its sandbox, which can end the shell before
+	// the next poll: then the session's status says why.
+	if s, serr := e.st.SessionByID(context.WithoutCancel(ctx), sessionID); serr == nil && s.Status != "active" {
+		return ErrSessionEnded
+	}
+	return err
 }
 
 // execScript copies a script into the sandbox under /root (root-owned,

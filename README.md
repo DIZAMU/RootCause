@@ -28,6 +28,18 @@ The server listens on 127.0.0.1 only. WSL2 forwards `localhost` from Windows to 
 
 Exercises that boot systemd (such as svc-02) need a host with cgroup v2. WSL2 uses cgroup v2 by default. Check with `docker info --format '{{.CgroupVersion}}'`, which must print `2`.
 
+### Kubernetes (v2)
+
+The same sessions can run in a local k3d cluster (spec section 8.2): the API and dashboard, Postgres and dbt in the namespace `rootcause-system`, one pod per session in `sandboxes`, and the terminal in the browser.
+
+1. Run `scripts/install-k8s-tools.sh`. It puts pinned, checksum-verified `k3d` and `kubectl` in `~/.local/bin`, without sudo.
+2. Run `scripts/k8s-up.sh`. It creates the cluster (1 server, 2 agents), builds and imports the images, generates the database password into git-ignored `deploy/k8s/.env`, and deploys everything. Re-run it after a change.
+3. Open http://localhost:7300. Start an exercise and work in the terminal on the exercise page.
+4. Run `scripts/k8s-prove.sh` to check the isolation: the API's permissions, the network policies, and one full session through the dashboard (it counts in the cluster's statistics).
+5. Run `scripts/k8s-down.sh` to stop the cluster and free memory; its data stays. `scripts/k8s-dbt.sh` rebuilds the statistics at once instead of waiting for the 10-minute CronJob.
+
+`RC_RUNTIME=kubernetes` points the CLI at the cluster, for example `RC_RUNTIME=kubernetes scripts/validate-exercise.sh perm-01-shared-folder 1`. svc-02 boots systemd, which does not run in a pod, so it is refused there (spec section 13.3).
+
 ## Tests
 
 Unit tests need nothing: `go test ./...`. Integration tests need a database whose name ends in `_test`, and Docker with userns-remap:
@@ -43,6 +55,7 @@ go test -count=1 ./...
 - Tests that run dbt create and drop their own database (for example `rootcause_selector_test`), because a dbt build reads every row in its database.
 - `RC_DBT_STRESS=1 go test -run TestBuildStress ./internal/dbt/` kills dbt builds at random points and checks that the next build succeeds. `RC_DBT_STRESS_ROUNDS` sets the rounds (default 10).
 - A failed dbt build saves its full `dbt.log` under `~/.cache/rootcause/dbt-logs/` and prints the path. The newest 20 are kept.
+- `TestClusterSession` plays a session against the deployed cluster and runs only with `RC_CLUSTER_URL` set; `scripts/k8s-prove.sh` sets it.
 
 ## CI
 

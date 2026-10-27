@@ -1,0 +1,40 @@
+# The API's identity (spec section 13.2): it may create, read, exec into and
+# delete pods in sandboxes. Nothing else, and nowhere else: a Role, not a
+# ClusterRole. scripts/k8s-prove.sh checks this with kubectl auth can-i.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: rootcause-api
+  namespace: rootcause-system
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: rootcause-api
+  namespace: sandboxes
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [create, get, list, delete]
+  # Exec over WebSocket is a GET that also needs create, so exec takes both.
+  - apiGroups: [""]
+    resources: [pods/exec]
+    verbs: [create, get]
+  - apiGroups: [""]
+    resources: [pods/log]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: rootcause-api
+  namespace: sandboxes
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: rootcause-api
+subjects:
+  - kind: ServiceAccount
+    name: rootcause-api
+    namespace: rootcause-system

@@ -6,6 +6,7 @@ import (
 	"github.com/DIZAMU/RootCause/internal/i18n"
 	"github.com/DIZAMU/RootCause/internal/runtime"
 	"github.com/DIZAMU/RootCause/internal/session"
+	"github.com/DIZAMU/RootCause/locales"
 )
 
 // userError is a failure the learner can act on. key names a locale string
@@ -53,7 +54,19 @@ func Message(b *i18n.Bundle, lang string, err error) string {
 		return b.T(lang, "error.no_shell", nil)
 	case errors.Is(err, runtime.ErrNeedsCgroupV2):
 		return b.T(lang, "error.cgroup_v2_required", nil)
+	case errors.Is(err, runtime.ErrSystemdUnsupported):
+		return b.T(lang, "error.systemd_unsupported", nil)
 	default:
 		return b.T(lang, "error.generic", map[string]string{"detail": err.Error()})
 	}
+}
+
+// English renders an error in English, for the developer commands, which run
+// without a learner profile.
+func English(err error) string {
+	b, lerr := i18n.Load(locales.FS)
+	if lerr != nil {
+		return err.Error()
+	}
+	return Message(b, "en", err)
 }

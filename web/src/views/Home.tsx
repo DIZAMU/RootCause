@@ -122,8 +122,26 @@ export function Home({ overview, reloadOverview }: Props) {
   );
 }
 
-// StatsNote says when the statistics are rebuilding, stale or failed.
+// StatsNote says when the statistics are rebuilding, stale or failed, and
+// when they were last built.
 function StatsNote({ overview }: { overview: Overview }) {
+  return (
+    <>
+      <StatsState overview={overview} />
+      <BuiltAt builtAt={overview.stats.built_at} />
+    </>
+  );
+}
+
+// BuiltAt shows when dbt last built the statistics, so statistics that lag
+// behind the latest session are visibly older.
+function BuiltAt({ builtAt }: { builtAt: string | null }) {
+  const { t, date } = useI18n();
+  if (!builtAt) return <p className="note">{t("web.stats.never_built")}</p>;
+  return <p className="note">{t("web.stats.built_at", { time: date(builtAt) })}</p>;
+}
+
+function StatsState({ overview }: { overview: Overview }) {
   const { t } = useI18n();
   const { stats, source } = overview;
   if (stats.updating) {

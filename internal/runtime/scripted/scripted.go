@@ -51,3 +51,19 @@ func (r *Runtime) Restart(context.Context, string) error                { return
 func (r *Runtime) Destroy(context.Context, string) error                { return nil }
 func (r *Runtime) List(context.Context) ([]runtime.Sandbox, error)      { return nil, nil }
 func (r *Runtime) BuildImage(context.Context, string, string) error     { return nil }
+
+// Terminal echoes stdin to stdout, like a shell printing what is typed, until
+// stdin ends or ctx does.
+func (r *Runtime) Terminal(ctx context.Context, _ string, _ []string, stdin io.Reader, stdout io.Writer, _ <-chan runtime.TermSize) error {
+	done := make(chan error, 1)
+	go func() {
+		_, err := io.Copy(stdout, stdin)
+		done <- err
+	}()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err := <-done:
+		return err
+	}
+}
