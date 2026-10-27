@@ -1,0 +1,110 @@
+# dbt for the cluster (spec sections 8.2 and 9.3): a CronJob builds the marts
+# every 10 minutes. The API has no rights to start Jobs (spec section 13.2),
+# so the dashboard shows when the marts were last built instead.
+# scripts/k8s-dbt.sh starts a build at once.
+#
+# The init container writes the project embedded in the rootcause binary
+# (rootcause dbt-project), so the cluster builds exactly what the binary
+# ships, and dbt reads it read-only.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: dbt
+  namespace: rootcause-system
+spec:
+  schedule: "*/10 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 300
+      ttlSecondsAfterFinished: 3600
+      template:
+        metadata:
+          labels:
+            app: rootcause-dbt
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          enableServiceLinks: false
+          hostUsers: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          initContainers:
+            - name: project
+              image: rootcause/api:local
+              imagePullPolicy: Never
+              args: [dbt-project, /project]
+              resources:
+                limits:
+                  cpu: 200m
+                  memory: 64Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: [ALL]
+              volumeMounts:
+                - name: project
+                  mountPath: /project
+          containers:
+            - name: dbt
+              image: ghcr.io/dbt-labs/dbt-postgres:1.9.0@sha256:37624cce09877ff03fd5f6b01355fdf5a3462a1b651d40d8b8edc1cf056eedf0
+              args: [build]
+              env:
+                - name: DBT_HOST
+                  value: postgres
+                - name: DBT_PORT
+                  value: "5432"
+                - name: DBT_USER
+                  value: rootcause
+                - name: DBT_DBNAME
+                  value: rootcause
+                - name: DBT_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: rootcause-db
+                      key: password
+                - name: DBT_PROFILES_DIR
+                  value: /usr/app/dbt
+                - name: DBT_TARGET_PATH
+                  value: /tmp/target
+                - name: DBT_LOG_PATH
+                  value: /tmp/logs
+                - name: HOME
+                  value: /tmp
+                - name: DBT_SEND_ANONYMOUS_USAGE_STATS
+                  value: "false"
+                - name: DBT_VERSION_CHECK
+                  value: "false"
+              resources:
+                requests:
+                  cpu: 200m
+                  memory: 256Mi
+                limits:
+                  cpu: "1"
+                  memory: 512Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: [ALL]
+              volumeMounts:
+                - name: project
+                  mountPath: /usr/app/dbt
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: project
+              emptyDir:
+                sizeLimit: 16Mi
+            - name: tmp
+              emptyDir:
+                sizeLimit: 256Mi

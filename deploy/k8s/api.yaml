@@ -1,0 +1,92 @@
+# The API and dashboard (spec section 8.2): rootcause serve with the
+# kubernetes runtime. It runs as the rootcause-api service account, which may
+# only manage pods in sandboxes (rbac.yaml). The dashboard is reached through
+# the NodePort, which k3d publishes on the host's 127.0.0.1:7300 only
+# (k3d.yaml); the server's Host and token checks apply as on the laptop.
+apiVersion: v1
+kind: Service
+metadata:
+  name: rootcause-api
+  namespace: rootcause-system
+spec:
+  type: NodePort
+  selector:
+    app: rootcause-api
+  ports:
+    - port: 7300
+      targetPort: 7300
+      nodePort: 30730
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rootcause-api
+  namespace: rootcause-system
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: rootcause-api
+  template:
+    metadata:
+      labels:
+        app: rootcause-api
+    spec:
+      serviceAccountName: rootcause-api
+      # The kubernetes runtime needs the service account's token; the
+      # ServiceAccount itself does not mount it anywhere else.
+      automountServiceAccountToken: true
+      enableServiceLinks: false
+      hostUsers: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: api
+          image: rootcause/api:local
+          imagePullPolicy: Never
+          args: [serve, --listen-all, --port, "7300"]
+          env:
+            - name: RC_RUNTIME
+              value: kubernetes
+            - name: RC_DBT_MODE
+              value: cronjob
+            # A new pod's network policy is in place a moment after the pod
+            # starts; until then Postgres refuses it. Wait up to a minute.
+            - name: RC_DB_WAIT_SECONDS
+              value: "60"
+            - name: RC_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: rootcause-db
+                  key: database-url
+          ports:
+            - containerPort: 7300
+          readinessProbe:
+            tcpSocket:
+              port: 7300
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi

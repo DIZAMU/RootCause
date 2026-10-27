@@ -1,0 +1,82 @@
+# Network isolation for rootcause-system. Nothing in or out by default; then
+# exactly what each workload needs:
+#   - the API accepts the dashboard on 7300, and nothing else;
+#   - the API reaches Postgres and cluster DNS (its connection to the
+#     Kubernetes API server is the api-to-apiserver policy, which
+#     scripts/k8s-up.sh writes with the server's address);
+#   - dbt reaches Postgres and cluster DNS;
+#   - Postgres accepts the API and dbt on 5432.
+# Sandboxes get no rule here, so nothing in sandboxes reaches this namespace.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: rootcause-system
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-ingress
+  namespace: rootcause-system
+spec:
+  podSelector:
+    matchLabels:
+      app: rootcause-api
+  policyTypes: [Ingress]
+  ingress:
+    - ports:
+        - port: 7300
+          protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: to-postgres-and-dns
+  namespace: rootcause-system
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app, operator: In, values: [rootcause-api, rootcause-dbt]}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgres
+      ports:
+        - port: 5432
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres-ingress
+  namespace: rootcause-system
+spec:
+  podSelector:
+    matchLabels:
+      app: postgres
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - {key: app, operator: In, values: [rootcause-api, rootcause-dbt]}
+      ports:
+        - port: 5432
+          protocol: TCP

@@ -1,0 +1,90 @@
+# Limits and network isolation for the sandboxes namespace (spec section
+# 13.2). The runtime in internal/runtime/kubernetes labels every pod with
+# rootcause.network ("none" or "internal"); the engine labels check runners
+# rootcause.runner=true.
+#
+# Nothing in or out by default: no internet, no cluster DNS, no
+# rootcause-system, no other sandbox. The one exception is a check runner,
+# which may connect to sandboxes on the internal network (spec section 13.3
+# names the limit: with two sessions, a runner could reach the other one).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: sandboxes
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: runner-egress
+  namespace: sandboxes
+spec:
+  podSelector:
+    matchLabels:
+      rootcause.runner: "true"
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              rootcause.network: internal
+            matchExpressions:
+              - {key: rootcause.runner, operator: DoesNotExist}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sandbox-from-runner
+  namespace: sandboxes
+spec:
+  podSelector:
+    matchLabels:
+      rootcause.network: internal
+    matchExpressions:
+      - {key: rootcause.runner, operator: DoesNotExist}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              rootcause.runner: "true"
+---
+# At most two sessions and a check runner at a time (spec section 8.2's
+# memory budget on an 8 GB WSL2 host).
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: sandboxes
+  namespace: sandboxes
+spec:
+  hard:
+    pods: "4"
+    requests.cpu: "2"
+    limits.cpu: "2"
+    requests.memory: 1Gi
+    limits.memory: 1Gi
+    services: "0"
+    configmaps: "1"
+    secrets: "0"
+    persistentvolumeclaims: "0"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: sandboxes
+  namespace: sandboxes
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: 500m
+        memory: 256Mi
+      defaultRequest:
+        cpu: 500m
+        memory: 256Mi
+      max:
+        cpu: "1"
+        memory: 512Mi
