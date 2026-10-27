@@ -16,6 +16,8 @@ spec:
     path: deploy/k8s
   destination:
     server: https://kubernetes.default.svc
+    # Every manifest names its own namespace; the project checks this default.
+    namespace: rootcause-system
   syncPolicy:
     automated:
       prune: true
