@@ -21,14 +21,17 @@ import (
 // token from the served page, starts perm-01 over the API, works in the web
 // terminal, and checks. From the terminal it also tries every address in
 // RC_CLUSTER_PROBES ("name=ip:port,..."), all of which must be unreachable
-// from a sandbox. scripts/k8s-prove.sh runs it with RC_CLUSTER_URL set; it is
+// from a sandbox. scripts/k8s-prove.sh runs it with RC_CLUSTER_URL set, at a
+// second API pod on a test database it names in RC_CLUSTER_DATABASE; it is
 // skipped otherwise.
-//
-// It plays on the cluster's own database, so the session counts there.
 func TestClusterSession(t *testing.T) {
 	base := os.Getenv("RC_CLUSTER_URL")
 	if base == "" {
 		t.Skip("RC_CLUSTER_URL is not set")
+	}
+	// The API at base must serve a test database, never the learner's.
+	if db := os.Getenv("RC_CLUSTER_DATABASE"); !strings.HasSuffix(db, "_test") {
+		t.Fatalf("RC_CLUSTER_DATABASE=%q: the cluster API under test must use a database ending in _test", db)
 	}
 	c := &clusterClient{t: t, base: strings.TrimSuffix(base, "/")}
 	c.readToken()

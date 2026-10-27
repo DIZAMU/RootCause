@@ -35,7 +35,7 @@ The same sessions can run in a local k3d cluster (spec section 8.2): the API and
 1. Run `scripts/install-k8s-tools.sh`. It puts pinned, checksum-verified `k3d` and `kubectl` in `~/.local/bin`, without sudo.
 2. Run `scripts/k8s-up.sh`. It creates the cluster (1 server, 2 agents), builds and imports the images, generates the database password into git-ignored `deploy/k8s/.env`, and deploys everything. Re-run it after a change.
 3. Open http://localhost:7300. Start an exercise and work in the terminal on the exercise page.
-4. Run `scripts/k8s-prove.sh` to check the isolation: the API's permissions, the network policies, and one full session through the dashboard (it counts in the cluster's statistics).
+4. Run `scripts/k8s-prove.sh` to check the isolation: the API's permissions, the network policies, and one full session through the dashboard. That session plays on a separate database, `rootcause_cluster_test`, through a second API pod, and leaves the real one untouched.
 5. Run `scripts/k8s-down.sh` to stop the cluster and free memory; its data stays. `scripts/k8s-dbt.sh` rebuilds the statistics at once instead of waiting for the 10-minute CronJob.
 
 `RC_RUNTIME=kubernetes` points the CLI at the cluster, for example `RC_RUNTIME=kubernetes scripts/validate-exercise.sh perm-01-shared-folder 1`. svc-02 boots systemd, which does not run in a pod, so it is refused there (spec section 13.3).
