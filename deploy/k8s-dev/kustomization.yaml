@@ -1,0 +1,32 @@
+# The cluster with the API image built from the working tree
+# (scripts/k8s-up.sh --dev): rootcause/api:local, imported into the nodes
+# with k3d, so unreleased code can be tried. k8s-up.sh turns Argo CD's
+# automated sync off first, or it would put the release back; a run without
+# --dev turns it on again.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../k8s
+images:
+  - name: ghcr.io/dizamu/rootcause-api
+    newName: rootcause/api
+    newTag: local
+patches:
+  - target:
+      kind: Deployment
+      name: rootcause-api
+    patch: |
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: Never
+      - op: remove
+        path: /spec/template/spec/imagePullSecrets
+  - target:
+      kind: CronJob
+      name: dbt
+    patch: |
+      - op: replace
+        path: /spec/jobTemplate/spec/template/spec/initContainers/0/imagePullPolicy
+        value: Never
+      - op: remove
+        path: /spec/jobTemplate/spec/template/spec/imagePullSecrets

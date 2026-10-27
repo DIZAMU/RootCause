@@ -1,0 +1,22 @@
+# RootCause's Application (spec section 14): Argo CD syncs deploy/k8s from
+# main into the cluster. Automated sync with prune (what leaves git leaves
+# the cluster) and self-heal (a change made by hand is reverted).
+# scripts/k8s-up.sh applies it; with --dev it turns automated sync off
+# instead, and scripts/k8s-gitops-prove.sh fails while it is off.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: rootcause
+  namespace: argocd
+spec:
+  project: rootcause
+  source:
+    repoURL: git@github.com:DIZAMU/RootCause.git
+    targetRevision: main
+    path: deploy/k8s
+  destination:
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

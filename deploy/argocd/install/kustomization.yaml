@@ -1,0 +1,28 @@
+# Argo CD core (spec section 8.2): the application controller, the repo
+# server and redis, with no UI, no SSO and no notifications. scripts/k8s-up.sh
+# downloads core-install.yaml for the version below, checks its SHA-256, puts
+# it next to this file in a temporary directory and applies the result. The
+# manifest itself is not committed.
+#
+# Images are pinned by digest. The ApplicationSet controller is removed:
+# RootCause has one Application (deploy/argocd/application.yaml).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: argocd
+resources:
+  - core-install.yaml
+images:
+  - name: quay.io/argoproj/argocd
+    digest: sha256:8e5cc5bb008df8a09dba439462e58c94c55b7735888d3ebde0c25fc05e4e5335
+  - name: public.ecr.aws/docker/library/redis
+    digest: sha256:08ad0b1d280850169a790dba1393ff7a90aef951fc19632cf4d3ce4f78e679ba
+patches:
+  - target:
+      kind: Deployment
+      name: argocd-applicationset-controller
+    patch: |
+      $patch: delete
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: argocd-applicationset-controller
