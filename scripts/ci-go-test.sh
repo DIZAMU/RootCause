@@ -14,8 +14,9 @@
 set -euo pipefail
 
 # Skipped unless asked for on purpose: RC_DBT_STRESS=1, or RC_CLUSTER_URL
-# for the session against the deployed cluster (scripts/k8s-prove.sh).
-allowed_skips=" TestBuildStress TestClusterSession "
+# and RC_CLUSTER_ADMISSION for the tests against the deployed cluster
+# (scripts/k8s-prove.sh).
+allowed_skips=" TestBuildStress TestClusterSession TestSandboxAdmission "
 
 required=()
 while [ "${1:-}" = "--require" ]; do

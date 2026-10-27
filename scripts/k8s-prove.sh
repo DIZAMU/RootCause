@@ -17,6 +17,10 @@
 #   4. Nothing of the cluster listens beyond the host's 127.0.0.1: every port
 #      the k3d node containers publish (the dashboard and the Kubernetes API)
 #      is bound to 127.0.0.1.
+#   5. The admission policy on sandboxes is in place with failurePolicy Fail
+#      and a Deny binding with no exemptions, admits every pod the runtime
+#      builds and refuses each forbidden change, as the API and as Argo CD
+#      (TestSandboxAdmission). Sandbox root maps to an unprivileged host UID.
 #
 # The probe pods, the rootcause-probe namespace, the second API pod, its
 # Secret and the test database are removed at the end.
@@ -158,6 +162,16 @@ probe_pod rootcause-probe probe-control "    app: probe" "sleep infinity"
 kc wait --for=condition=Ready pod -n sandboxes probe-target probe-sandbox probe-runner --timeout=120s >/dev/null
 kc wait --for=condition=Ready pod -n rootcause-probe probe-control --timeout=120s >/dev/null
 
+# Root in a sandbox pod is not root on the node: its user namespace maps UID 0
+# to an unprivileged range (hostUsers false, ADR 0011).
+uid_map="$(kc exec -n sandboxes probe-sandbox -- cat /proc/self/uid_map | awk 'NR == 1 { print $1, $2, $3 }')"
+read -r inside outside count <<<"$uid_map"
+if [[ "$inside" == 0 && "$outside" -ge 65536 && "$count" -le 65536 ]]; then
+	pass "sandbox root maps to host UID $outside ($count IDs), not 0"
+else
+	fail "sandbox uid_map is '$uid_map', want 0 mapped to an unprivileged range"
+fi
+
 ip() { kc get "$@" -o jsonpath='{.status.podIP}{.spec.clusterIP}'; }
 target_ip="$(ip pod -n sandboxes probe-target)"
 api_pod_ip="$(kc get pod -n rootcause-system -l app=rootcause-api -o jsonpath='{.items[0].status.podIP}')"
@@ -293,6 +307,38 @@ while read -r b; do
 		fail "published beyond 127.0.0.1: $b (deploy/k8s/k3d.yaml binds 127.0.0.1 for a new cluster; recreate it)"
 	fi
 done <<<"$bindings"
+
+echo "== 5. admission"
+vap="$(kc get validatingadmissionpolicy rootcause-sandbox-pods -o jsonpath='{.spec.failurePolicy}' 2>/dev/null || true)"
+binding="$(kc get validatingadmissionpolicybinding rootcause-sandbox-pods \
+	-o jsonpath='{.spec.policyName} {.spec.validationActions} {.spec.matchResources.namespaceSelector.matchLabels}{.spec.matchConditions}' 2>/dev/null || true)"
+if [[ "$vap" == Fail ]]; then
+	pass "policy rootcause-sandbox-pods: failurePolicy Fail"
+else
+	fail "policy rootcause-sandbox-pods: failurePolicy '$vap' (missing, or not Fail)"
+fi
+if [[ "$binding" == 'rootcause-sandbox-pods ["Deny"] {"kubernetes.io/metadata.name":"sandboxes"}' ]]; then
+	pass "binding: Deny only, namespace sandboxes, no match conditions"
+else
+	fail "binding is '$binding'"
+fi
+log="$(mktemp)"
+rc=0
+RC_CLUSTER_ADMISSION=1 RC_CLUSTER_CONTEXT="$context" \
+	go test -count=1 -v -run '^TestSandboxAdmission$' ./internal/runtime/kubernetes/ >"$log" 2>&1 || rc=$?
+# One line per case and identity: the leaves of the subtest tree.
+while read -r status name; do
+	case "$name" in
+	*/allow/* | */deny/* | */forbidden/*)
+		if [[ "$status" == PASS ]]; then pass "admission ${name#TestSandboxAdmission/}"; else fail "admission ${name#TestSandboxAdmission/}"; fi
+		;;
+	esac
+done < <(sed -nE 's/^ *--- (PASS|FAIL): ([^ ]+).*/\1 \2/p' "$log")
+if [[ "$rc" -ne 0 ]] || ! grep -q -- '--- PASS: TestSandboxAdmission ' "$log"; then
+	grep -E 'admission_test.go|FAIL|panic' "$log" | head -20 || true
+	fail "TestSandboxAdmission (exit $rc)"
+fi
+rm -f "$log"
 
 echo
 if [[ "$failures" -gt 0 ]]; then
