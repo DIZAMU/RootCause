@@ -20,4 +20,4 @@ resources:
 images:
   - name: rootcause/api
     newName: ghcr.io/dizamu/rootcause-api
-    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+    digest: sha256:5b0d924dd5735caefc6c47369e1363a21cc7b77a6d9dcdae54175dabacecb843
