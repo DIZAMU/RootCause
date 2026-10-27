@@ -11,6 +11,11 @@ metadata:
 servers: 1
 agents: 2
 image: rancher/k3s:v1.37.1-k3s1@sha256:ca7f37d993d82ef0dcdcfecb2e0e2618ea541dbaffc620c8cedebe01a82acd0d
+# The Kubernetes API is published on the host's 127.0.0.1 only, like the
+# dashboard. k3d's default is 0.0.0.0. This applies when the cluster is
+# created; an existing cluster keeps its old port until it is recreated.
+kubeAPI:
+  hostIP: "127.0.0.1"
 ports:
   - port: 127.0.0.1:7300:30730
     nodeFilters:

@@ -14,6 +14,9 @@
 #      probes repeated from the real session pod's terminal. It plays on its
 #      own database, rootcause_cluster_test, through a second API pod, and the
 #      real database must be unchanged afterwards (working rule 10).
+#   4. Nothing of the cluster listens beyond the host's 127.0.0.1: every port
+#      the k3d node containers publish (the dashboard and the Kubernetes API)
+#      is bound to 127.0.0.1.
 #
 # The probe pods, the rootcause-probe namespace, the second API pod, its
 # Secret and the test database are removed at the end.
@@ -73,6 +76,8 @@ get nodes - no
 list namespaces - no
 create namespaces - no
 create clusterrolebindings.rbac.authorization.k8s.io - no
+delete validatingadmissionpolicies.admissionregistration.k8s.io - no
+patch validatingadmissionpolicybindings.admissionregistration.k8s.io - no
 impersonate serviceaccounts - no
 impersonate users - no
 * * - no
@@ -271,6 +276,23 @@ if [[ "$played" -ge 1 && "$real_before" == "$real_after" ]]; then
 else
 	fail "sessions: $testdb has $played, rootcause went from $real_before to $real_after"
 fi
+
+echo "== 4. published ports"
+# docker ps prints each published port as "IP:hostport->port/proto".
+published="$(docker ps --filter "label=k3d.cluster=rootcause" --format '{{.Names}} {{.Ports}}')"
+# The address may be IPv6 in brackets ([::]:port); "]" goes first in the set.
+bindings="$(grep -oE '[][0-9a-f.:]+:[0-9]+->[0-9]+/[a-z]+' <<<"$published" || true)"
+if [[ -z "$bindings" ]]; then
+	fail "no published ports found for the k3d cluster"
+fi
+while read -r b; do
+	[[ -n "$b" ]] || continue
+	if [[ "$b" == 127.0.0.1:* ]]; then
+		pass "published on the host's loopback only: $b"
+	else
+		fail "published beyond 127.0.0.1: $b (deploy/k8s/k3d.yaml binds 127.0.0.1 for a new cluster; recreate it)"
+	fi
+done <<<"$bindings"
 
 echo
 if [[ "$failures" -gt 0 ]]; then

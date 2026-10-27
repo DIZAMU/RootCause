@@ -58,6 +58,10 @@ jobs:
         run: |
           shellcheck --version
           shellcheck scripts/*.sh .githooks/commit-msg exercises/*/*.sh
+      - name: no credentials on command lines
+        run: |
+          scripts/ci-check-credential-args.sh --self-test
+          scripts/ci-check-credential-args.sh
       - name: commit-msg hook cases
         run: bash scripts/test-commit-msg.sh
       - name: i18n key parity

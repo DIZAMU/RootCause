@@ -54,7 +54,7 @@ func TestRunnerSpec(t *testing.T) {
 		Caps:   []string{"SETUID"},
 		Labels: map[string]string{labelSession: "s-1", labelDatabase: "rootcause_test"},
 	}
-	got := runnerSpec(sandbox)
+	got := RunnerSpec(sandbox)
 	if got.Name != "rootcause-s-1-runner" || got.Image != "img" || got.Network != "internal" {
 		t.Errorf("runner name/image/network = %q/%q/%q", got.Name, got.Image, got.Network)
 	}
@@ -67,7 +67,7 @@ func TestRunnerSpec(t *testing.T) {
 		}
 	}
 	if _, ok := sandbox.Labels[labelRunner]; ok {
-		t.Error("runnerSpec changed the sandbox's own labels")
+		t.Error("RunnerSpec changed the sandbox's own labels")
 	}
 }
 
