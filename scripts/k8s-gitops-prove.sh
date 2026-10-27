@@ -69,11 +69,15 @@ app() { kc get application rootcause -n argocd -o jsonpath="$1"; }
 
 echo "== 1. the Application"
 if ! kc get application rootcause -n argocd >/dev/null 2>&1; then
+	if ! kc get crd applications.argoproj.io >/dev/null 2>&1; then
+		echo "note  Argo CD is not installed in this cluster"
+	fi
 	fail "no Application rootcause in argocd (run scripts/k8s-up.sh without --dev)"
 	echo
 	echo "k8s-gitops-prove: $failures check(s) failed"
 	exit 1
 fi
+section1_failures="$failures"
 src="$(app '{.spec.project} {.spec.source.repoURL} {.spec.source.targetRevision} {.spec.source.path}')"
 if [[ "$src" == "rootcause $repo_url main deploy/k8s" ]]; then
 	pass "project rootcause, $repo_url, main, deploy/k8s"
@@ -98,6 +102,19 @@ if [[ "$state" == "Synced Healthy $main_sha" ]]; then
 	pass "Synced and Healthy at main ($main_sha)"
 else
 	fail "state '$state', main is $main_sha"
+fi
+# When section 1 fails, Argo CD's own conditions usually say why (a refused
+# spec, an unreachable repository, a manifest that does not render).
+if [[ "$failures" -gt "$section1_failures" ]]; then
+	conditions="$(app '{range .status.conditions[*]}{.type}: {.message}{"\n"}{end}')"
+	if [[ -n "$conditions" ]]; then
+		echo "Argo CD conditions:"
+		while IFS= read -r line; do
+			echo "      $line"
+		done <<<"$conditions"
+	else
+		echo "note  the Application reports no conditions"
+	fi
 fi
 
 echo "== 2. the release"
