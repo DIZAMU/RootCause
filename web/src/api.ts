@@ -20,7 +20,7 @@ export interface Overview {
   source: "marts" | "fallback" | "";
   levels: { topic: string; level: number }[];
   review: { exercise: string; due_at: string; due_now: boolean }[] | null;
-  stats: { fresh: boolean; updating: boolean; error: string };
+  stats: { fresh: boolean; updating: boolean; error: string; built_at: string | null };
 }
 
 export interface ExerciseRow {
@@ -62,6 +62,7 @@ export interface Session {
   level_change: { topic: string; from: number; to: number } | null;
   walkthrough: string;
   shell_command: string;
+  terminal: boolean;
   check?: { result: "pass" | "fail" | "infra"; feedback: string; stars: number };
 }
 
@@ -73,6 +74,15 @@ export class ApiError extends Error {
   ) {
     super(message);
   }
+}
+
+// openTerminal opens the web terminal's WebSocket. A browser cannot set
+// headers on a WebSocket, so the token travels as a subprotocol; the server
+// answers with rootcause.terminal only and never echoes the token.
+export function openTerminal(): WebSocket {
+  const url = new URL("/api/terminal", window.location.href);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  return new WebSocket(url, ["rootcause.terminal", "rootcause.token." + token]);
 }
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {

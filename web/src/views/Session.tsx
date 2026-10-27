@@ -3,6 +3,7 @@ import { api, type Session } from "../api";
 import { CopyCommand, ErrorBanner, Stars, TopicTag } from "../components";
 import { sessionHref, usePoll } from "../hooks";
 import { useI18n } from "../i18n";
+import { WebTerminal } from "../WebTerminal";
 
 // sessionPollMs is how often an open session is re-read, so hints, checks and
 // results from the CLI show up here (plan decision D2).
@@ -88,11 +89,18 @@ export function SessionView({ id, activeId, activeExercise, reloadOverview }: Pr
 
           {isActive ? (
             <>
-              <section className="card">
-                <h2>{t("web.session.shell_title")}</h2>
-                <p className="muted">{t("web.session.shell_body")}</p>
-                <CopyCommand command={s.shell_command} />
-              </section>
+              {s.terminal ? (
+                <section className="card">
+                  <h2>{t("web.session.terminal_title")}</h2>
+                  <WebTerminal sessionId={s.id} />
+                </section>
+              ) : (
+                <section className="card">
+                  <h2>{t("web.session.shell_title")}</h2>
+                  <p className="muted">{t("web.session.shell_body")}</p>
+                  <CopyCommand command={s.shell_command} />
+                </section>
+              )}
 
               <CheckResult check={lastCheck} />
 
