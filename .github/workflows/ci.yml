@@ -107,3 +107,24 @@ jobs:
           --require TestBuildRecoversFromKilledEngine
           --require TestPlaySvc01
           -tags webdist ./...
+
+  # The release deploy/k8s pins must be a pushed vX.Y.Z (spec section 14).
+  # GITHUB_TOKEN is the only credential, with packages: read on this job only.
+  # A pull request from a fork gets no package access, so the job does not
+  # run there.
+  release-image:
+    name: ci-release-image
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: pinned digest is a release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: scripts/ci-release-image.sh check-kustomization
