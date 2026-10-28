@@ -1,6 +1,8 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
+import "./fonts.css";
+import "./tokens.css";
 import "./styles.css";
 
 // Apply a stored theme before the first paint, so dark mode never flashes

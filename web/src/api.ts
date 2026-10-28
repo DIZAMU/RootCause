@@ -10,24 +10,59 @@ export type Strings = Record<string, string>;
 export interface Overview {
   lang: Lang;
   active: { id: string; exercise: string } | null;
+  // A session start in progress: the engine's generic step, nothing more.
+  starting: { exercise: string; step: number; steps: number } | null;
   next: {
     exercise: string;
+    title: string;
+    from: string;
     topic: string;
     difficulty: number;
     reason: "review" | "weakest_topic";
     level: number;
   } | null;
   source: "marts" | "fallback" | "";
-  levels: { topic: string; level: number }[];
+  levels: TopicLevel[];
   review: { exercise: string; due_at: string; due_now: boolean }[] | null;
   stats: { fresh: boolean; updating: boolean; error: string; built_at: string | null };
 }
 
+// TopicLevel is a topic's level and the strong solves toward the next one
+// (needed is 0 at the top level).
+export interface TopicLevel {
+  topic: string;
+  level: number;
+  streak: number;
+  needed: number;
+}
+
 export interface ExerciseRow {
   id: string;
+  title: string;
+  from: string;
   topic: string;
   difficulty: number;
   best_stars: number | null;
+  last: { status: SessionStatus; stars: number | null; ended_at: string | null } | null;
+}
+
+export interface StatsPage {
+  built: boolean;
+  exercises: {
+    id: string;
+    title: string;
+    topic: string;
+    difficulty: number;
+    sessions: number;
+    solves: number;
+    solve_rate: number | null;
+    avg_hints: number | null;
+    avg_solve_seconds: number | null;
+    calibration_flag: string | null;
+  }[];
+  days: { day: string; sessions: number; solves: number; avg_stars: number | null }[];
+  stats: Overview["stats"];
+  can_rebuild: boolean;
 }
 
 export interface HistoryRow {
@@ -108,6 +143,8 @@ export const api = {
   overview: () => request<Overview>("GET", "/api/overview"),
   exercises: () => request<ExerciseRow[]>("GET", "/api/exercises"),
   history: () => request<HistoryRow[]>("GET", "/api/history"),
+  stats: () => request<StatsPage>("GET", "/api/stats"),
+  rebuild: () => request<void>("POST", "/api/stats/rebuild"),
   active: () => request<Session | undefined>("GET", "/api/session"),
   session: (id: string) => request<Session>("GET", `/api/sessions/${encodeURIComponent(id)}`),
   strings: (lang: Lang) => request<Strings>("GET", `/api/i18n/${lang}`),

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { openTerminal } from "./api";
@@ -12,8 +12,9 @@ type State = { kind: "connecting" } | { kind: "open" } | { kind: "closed"; reaso
 // WebTerminal is a shell in the session's sandbox (v2): xterm.js on a
 // WebSocket to /api/terminal, where the server runs bash in the sandbox pod.
 // The socket closes with a reason when the shell exits or the session ends;
-// the learner can open it again while the session is active.
-export function WebTerminal({ sessionId }: { sessionId: string }) {
+// the learner can open it again while the session is active. It is memoised
+// on the session id, so nothing around it re-renders the terminal.
+export const WebTerminal = memo(function WebTerminal({ sessionId }: { sessionId: string }) {
   const { t } = useI18n();
   const box = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<State>({ kind: "connecting" });
@@ -23,14 +24,46 @@ export function WebTerminal({ sessionId }: { sessionId: string }) {
     const el = box.current;
     if (!el) return;
     setState({ kind: "connecting" });
+    let disposed = false;
+    let cleanup = () => {};
+    // Measure cells in the terminal's own font: wait until it has loaded.
+    void document.fonts.load('14px "JetBrains Mono"').finally(() => {
+      if (!disposed) cleanup = attach(el);
+    });
+    return () => {
+      disposed = true;
+      cleanup();
+    };
+  }, [sessionId, attempt]);
+
+  // attach opens the terminal in el and connects it; it returns the cleanup.
+  const attach = (el: HTMLDivElement) => {
     const term = new Terminal({
       rows: ROWS,
       cursorBlink: true,
-      fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+      fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
       fontSize: 14,
       scrollback: 2000,
     });
     term.open(el);
+    // Ctrl+Enter (run the check) and Ctrl+K (the palette) are the app's: the
+    // shell never receives them. The key event goes on to the app's own
+    // listener, which acts on it.
+    //
+    // Tab completes in the shell, so the terminal would trap the keyboard
+    // (WCAG 2.1.2). Esc, then Tab or Shift+Tab, leaves it instead: the Esc
+    // still reaches the shell, the Tab moves focus on.
+    let afterEscape = false;
+    term.attachCustomKeyEventHandler((e) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === "Enter" || e.key.toLowerCase() === "k")) return false;
+      if (e.type !== "keydown") return true;
+      if (e.key === "Tab" && afterEscape) {
+        afterEscape = false;
+        return false;
+      }
+      afterEscape = e.key === "Escape";
+      return true;
+    });
 
     const ws = openTerminal();
     ws.binaryType = "arraybuffer";
@@ -65,25 +98,26 @@ export function WebTerminal({ sessionId }: { sessionId: string }) {
       ws.close();
       term.dispose();
     };
-  }, [sessionId, attempt]);
+  };
 
   return (
     <div className="web-terminal">
       <div ref={box} className="web-terminal-screen" />
-      {state.kind === "connecting" && <p className="muted small">{t("web.terminal.connecting")}</p>}
+      {/* One status line, always there, so nothing below it moves. */}
+      <p className="terminal-status">{state.kind === "connecting" ? t("web.terminal.connecting") : t("web.terminal.leave")}</p>
       {state.kind === "closed" && (
-        <div className="banner warn" role="status">
-          <p>{t(closeText(state.reason))}</p>
+        <div className="banner banner-warn" role="status">
+          <p className="banner-text">{t(closeText(state.reason))}</p>
           {state.reason !== "session_ended" && state.reason !== "no_session" && (
-            <button type="button" onClick={() => setAttempt((n) => n + 1)}>
-              {t("web.terminal.reconnect")}
+            <button type="button" className="btn btn-secondary" onClick={() => setAttempt((n) => n + 1)}>
+              <span className="btn-label">{t("web.terminal.reconnect")}</span>
             </button>
           )}
         </div>
       )}
     </div>
   );
-}
+});
 
 // closeText maps the server's close reason to a message key.
 function closeText(reason: string): string {
