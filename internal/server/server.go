@@ -47,8 +47,8 @@ const TokenHeader = "X-RootCause-Token"
 // tokenPlaceholder is replaced by the token in the served index.html.
 const tokenPlaceholder = "__RC_TOKEN__"
 
-// Config is what the server needs. Every field except Assets and Random is
-// required.
+// Config is what the server needs. Every field except Assets, Random and
+// CanRebuild is required.
 type Config struct {
 	Store        *store.Store
 	Engine       *session.Engine
@@ -66,6 +66,10 @@ type Config struct {
 	Assets fs.FS
 	// Random returns seeds for new sessions. nil means math/rand.
 	Random func() int64
+	// CanRebuild is true where BuildStats really builds the marts, so the
+	// dashboard may offer "rebuild now". It is false in the cluster, where a
+	// CronJob builds them.
+	CanRebuild bool
 }
 
 // Server serves the dashboard.
@@ -77,6 +81,11 @@ type Server struct {
 	// actions serializes the session actions (start, hint, check, reset,
 	// give up), so a double click cannot run two at once.
 	actions sync.Mutex
+
+	// starting is the session start in progress, for the overview; nil when
+	// none runs. Guarded by startMu.
+	startMu  sync.Mutex
+	starting *startingJSON
 }
 
 // New builds a server with a fresh random token. Background statistics

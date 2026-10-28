@@ -71,9 +71,39 @@ type LevelChange struct {
 	To    int
 }
 
+// StartStep is one stage of a session start, in order. A dashboard shows
+// them while the machine comes up; they are generic and say nothing about
+// the exercise or its variant.
+type StartStep int
+
+const (
+	StepBuildImage   StartStep = iota // build (or import) the exercise image
+	StepStartMachine                  // create the sandbox and wait until it is ready
+	StepSetUp                         // run setup.sh, if the exercise has one
+	StepPlantFault                    // run break.sh
+)
+
+// StartSteps is how many StartStep values there are.
+const StartSteps = 4
+
+type progressKey struct{}
+
+// WithStartProgress returns a context under which Start (and Reset) calls
+// report with each step as it begins.
+func WithStartProgress(ctx context.Context, report func(StartStep)) context.Context {
+	return context.WithValue(ctx, progressKey{}, report)
+}
+
+// reportStep tells the caller of Start which step begins, if it asked.
+func reportStep(ctx context.Context, step StartStep) {
+	if report, ok := ctx.Value(progressKey{}).(func(StartStep)); ok {
+		report(step)
+	}
+}
+
 // Start creates a session and its sandbox, builds the healthy state, plants the
 // fault, and logs session_started. The seed makes the variant and fault
-// reproducible.
+// reproducible. A context from WithStartProgress hears each StartStep.
 func (e *Engine) Start(ctx context.Context, learnerID int, exerciseID string, seed int64) (store.Session, error) {
 	ex, err := exercise.Load(filepath.Join(e.exDir, exerciseID))
 	if err != nil {
@@ -91,6 +121,7 @@ func (e *Engine) Start(ctx context.Context, learnerID int, exerciseID string, se
 	}
 
 	tag := imageTag(ex)
+	reportStep(ctx, StepBuildImage)
 	if err := e.builder.BuildImage(ctx, tag, ex.Dir()); err != nil {
 		return store.Session{}, err
 	}
@@ -125,6 +156,7 @@ func (e *Engine) Start(ctx context.Context, learnerID int, exerciseID string, se
 		}
 	}()
 
+	reportStep(ctx, StepStartMachine)
 	sb, err := e.createSandbox(ctx, ex, e.specFor(ex, sessionID))
 	if err != nil {
 		return store.Session{}, fmt.Errorf("create sandbox: %w", err)
@@ -246,6 +278,7 @@ func (e *Engine) createSandbox(ctx context.Context, ex *exercise.Exercise, spec 
 // Both scripts are copied in, run as root and deleted, so neither the healthy
 // config nor the fault logic stays readable inside the sandbox.
 func (e *Engine) prepare(ctx context.Context, sandboxID string, ex *exercise.Exercise, env map[string]string) (map[string]any, error) {
+	reportStep(ctx, StepSetUp)
 	if _, err := os.Stat(filepath.Join(ex.Dir(), "setup.sh")); err == nil {
 		res, err := e.execScript(ctx, sandboxID, ex.Dir(), "setup.sh", env)
 		if err != nil {
@@ -255,6 +288,7 @@ func (e *Engine) prepare(ctx context.Context, sandboxID string, ex *exercise.Exe
 			return nil, fmt.Errorf("setup.sh exited %d: %s", res.ExitCode, strings.TrimSpace(string(res.Stderr)))
 		}
 	}
+	reportStep(ctx, StepPlantFault)
 	res, err := e.execScript(ctx, sandboxID, ex.Dir(), "break.sh", env)
 	if err != nil {
 		return nil, fmt.Errorf("plant fault: %w", err)
@@ -470,6 +504,18 @@ func (e *Engine) TopicLevel(ctx context.Context, learnerID int, topic string) (i
 		return 0, err
 	}
 	return grading.Level(levelOutcomes(outs)), nil
+}
+
+// TopicProgress returns the learner's level in a topic and the streak of
+// strong solves toward the next level (grading.Progress), from the same
+// replay as TopicLevel.
+func (e *Engine) TopicProgress(ctx context.Context, learnerID int, topic string) (level, streak int, err error) {
+	outs, err := e.st.TopicOutcomes(ctx, learnerID, topic)
+	if err != nil {
+		return 0, 0, err
+	}
+	level, streak = grading.Progress(levelOutcomes(outs))
+	return level, streak, nil
 }
 
 // levelOutcomes turns stored sessions into the inputs the level rule needs.

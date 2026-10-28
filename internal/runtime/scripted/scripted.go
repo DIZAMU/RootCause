@@ -18,6 +18,15 @@ type Runtime struct {
 	mu          sync.Mutex
 	checkPasses bool
 	feedback    string
+	buildHook   func()
+}
+
+// SetBuildHook makes BuildImage call hook first, so a test can hold a start
+// at its first step.
+func (r *Runtime) SetBuildHook(hook func()) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.buildHook = hook
 }
 
 // SetCheck makes later checks pass, or fail with the feedback key.
@@ -50,7 +59,17 @@ func (r *Runtime) CopyIn(context.Context, string, string, []byte) error { return
 func (r *Runtime) Restart(context.Context, string) error                { return nil }
 func (r *Runtime) Destroy(context.Context, string) error                { return nil }
 func (r *Runtime) List(context.Context) ([]runtime.Sandbox, error)      { return nil, nil }
-func (r *Runtime) BuildImage(context.Context, string, string) error     { return nil }
+
+// BuildImage calls the build hook, if set, and succeeds.
+func (r *Runtime) BuildImage(context.Context, string, string) error {
+	r.mu.Lock()
+	hook := r.buildHook
+	r.mu.Unlock()
+	if hook != nil {
+		hook()
+	}
+	return nil
+}
 
 // Terminal echoes stdin to stdout, like a shell printing what is typed, until
 // stdin ends or ctx does.

@@ -10,6 +10,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/DIZAMU/RootCause/internal/grading"
 	"github.com/DIZAMU/RootCause/internal/i18n"
 	"github.com/DIZAMU/RootCause/internal/play"
 	"github.com/DIZAMU/RootCause/internal/selector"
@@ -34,6 +35,8 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/overview", s.handleOverview)
 	mux.HandleFunc("GET /api/exercises", s.handleExercises)
 	mux.HandleFunc("GET /api/history", s.handleHistory)
+	mux.HandleFunc("GET /api/stats", s.handleStats)
+	mux.HandleFunc("POST /api/stats/rebuild", s.handleRebuild)
 	mux.HandleFunc("GET /api/session", s.handleActive)
 	mux.HandleFunc("GET /api/sessions/{id}", s.handleSession)
 	mux.HandleFunc("POST /api/start", s.handleStart)
@@ -82,13 +85,23 @@ func decode(r *http.Request, v any) error {
 // --- read endpoints ----------------------------------------------------------
 
 type overviewJSON struct {
-	Lang   string        `json:"lang"`
-	Active *activeJSON   `json:"active"`
-	Next   *nextJSON     `json:"next"`
-	Source string        `json:"source"` // marts | fallback
-	Levels []levelJSON   `json:"levels"`
-	Review *[]reviewJSON `json:"review"` // null until the marts are built
-	Stats  statsJSON     `json:"stats"`
+	Lang     string        `json:"lang"`
+	Active   *activeJSON   `json:"active"`
+	Starting *startingJSON `json:"starting"` // a start in progress; null if none
+	Next     *nextJSON     `json:"next"`
+	Source   string        `json:"source"` // marts | fallback
+	Levels   []levelJSON   `json:"levels"`
+	Review   *[]reviewJSON `json:"review"` // null until the marts are built
+	Stats    statsJSON     `json:"stats"`
+}
+
+// startingJSON is a session start in progress: which exercise, and which of
+// the engine's generic steps (session.StartStep) is running. Nothing else
+// about the exercise or its variant is sent.
+type startingJSON struct {
+	Exercise string `json:"exercise"`
+	Step     int    `json:"step"`  // 0-based index of the running step
+	Steps    int    `json:"steps"` // session.StartSteps
 }
 
 type activeJSON struct {
@@ -98,6 +111,8 @@ type activeJSON struct {
 
 type nextJSON struct {
 	Exercise   string `json:"exercise"`
+	Title      string `json:"title"` // the ticket header, see play.CatalogTicket
+	From       string `json:"from"`
 	Topic      string `json:"topic"`
 	Difficulty int    `json:"difficulty"`
 	Reason     string `json:"reason"` // review | weakest_topic
@@ -105,8 +120,10 @@ type nextJSON struct {
 }
 
 type levelJSON struct {
-	Topic string `json:"topic"`
-	Level int    `json:"level"`
+	Topic  string `json:"topic"`
+	Level  int    `json:"level"`
+	Streak int    `json:"streak"` // strong solves toward the next level so far
+	Needed int    `json:"needed"` // strong solves the next level needs; 0 at the top level
 }
 
 type reviewJSON struct {
@@ -131,6 +148,12 @@ func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	lang := s.lang(ctx)
 	out := overviewJSON{Lang: lang, Levels: []levelJSON{}}
+	s.startMu.Lock()
+	if s.starting != nil {
+		st := *s.starting
+		out.Starting = &st
+	}
+	s.startMu.Unlock()
 
 	if sess, ok, err := s.active(ctx); err != nil {
 		s.failErr(w, lang, err)
@@ -161,17 +184,26 @@ func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
 		return
 	default:
 		p := rec.Pick.Exercise
-		out.Next = &nextJSON{Exercise: p.ID, Topic: p.Topic, Difficulty: p.Difficulty, Reason: string(rec.Pick.Reason), Level: rec.Level}
-	}
-	out.Source = string(rec.Source)
-
-	for _, topic := range play.Topics {
-		level, err := s.cfg.Engine.TopicLevel(ctx, s.cfg.LearnerID, topic)
+		ticket, err := play.CatalogTicket(s.cfg.ExercisesDir, p.ID, lang)
 		if err != nil {
 			s.failErr(w, lang, err)
 			return
 		}
-		out.Levels = append(out.Levels, levelJSON{Topic: topic, Level: level})
+		out.Next = &nextJSON{Exercise: p.ID, Title: ticket.Title, From: ticket.From, Topic: p.Topic, Difficulty: p.Difficulty, Reason: string(rec.Pick.Reason), Level: rec.Level}
+	}
+	out.Source = string(rec.Source)
+
+	for _, topic := range play.Topics {
+		level, streak, err := s.cfg.Engine.TopicProgress(ctx, s.cfg.LearnerID, topic)
+		if err != nil {
+			s.failErr(w, lang, err)
+			return
+		}
+		needed := grading.StreakToLevelUp
+		if level == grading.MaxLevel {
+			needed = 0
+		}
+		out.Levels = append(out.Levels, levelJSON{Topic: topic, Level: level, Streak: streak, Needed: needed})
 	}
 
 	queue, err := s.cfg.Store.MartReviewQueue(ctx, s.cfg.LearnerID)
@@ -201,14 +233,24 @@ func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
 }
 
 type exerciseJSON struct {
-	ID         string `json:"id"`
-	Topic      string `json:"topic"`
-	Difficulty int    `json:"difficulty"`
-	BestStars  *int   `json:"best_stars"` // null if never solved
+	ID         string    `json:"id"`
+	Title      string    `json:"title"` // the ticket header, see play.CatalogTicket
+	From       string    `json:"from"`
+	Topic      string    `json:"topic"`
+	Difficulty int       `json:"difficulty"`
+	BestStars  *int      `json:"best_stars"` // null if never solved
+	Last       *lastJSON `json:"last"`       // the latest finished session; null if none
 }
 
-// handleExercises lists the catalog with the best stars per exercise, as
-// rootcause list does.
+// lastJSON is an exercise's latest finished session.
+type lastJSON struct {
+	Status  string     `json:"status"`
+	Stars   *int       `json:"stars"`
+	EndedAt *time.Time `json:"ended_at"`
+}
+
+// handleExercises lists the catalog with the ticket header, the best stars
+// and the latest finished session per exercise, as rootcause list does.
 func (s *Server) handleExercises(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	lang := s.lang(ctx)
@@ -222,6 +264,17 @@ func (s *Server) handleExercises(w http.ResponseWriter, r *http.Request) {
 		s.failErr(w, lang, err)
 		return
 	}
+	history, err := s.cfg.Store.History(ctx, s.cfg.LearnerID, historyLimit)
+	if err != nil {
+		s.failErr(w, lang, err)
+		return
+	}
+	last := make(map[string]*lastJSON)
+	for _, h := range history { // newest first
+		if _, seen := last[h.ExerciseID]; !seen {
+			last[h.ExerciseID] = &lastJSON{Status: h.Status, Stars: h.Stars, EndedAt: h.EndedAt}
+		}
+	}
 	slices.SortFunc(catalog, func(a, b store.ExerciseRow) int {
 		switch {
 		case a.ID < b.ID:
@@ -233,7 +286,12 @@ func (s *Server) handleExercises(w http.ResponseWriter, r *http.Request) {
 	})
 	out := []exerciseJSON{}
 	for _, ex := range catalog {
-		e := exerciseJSON{ID: ex.ID, Topic: ex.Topic, Difficulty: ex.Difficulty}
+		ticket, err := play.CatalogTicket(s.cfg.ExercisesDir, ex.ID, lang)
+		if err != nil {
+			s.failErr(w, lang, err)
+			return
+		}
+		e := exerciseJSON{ID: ex.ID, Title: ticket.Title, From: ticket.From, Topic: ex.Topic, Difficulty: ex.Difficulty, Last: last[ex.ID]}
 		if n, ok := best[ex.ID]; ok {
 			e.BestStars = &n
 		}
@@ -268,6 +326,116 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+type statsPageJSON struct {
+	Built     bool               `json:"built"` // false until dbt has built the marts once
+	Exercises []exerciseStatJSON `json:"exercises"`
+	Days      []progressDayJSON  `json:"days"`
+	Stats     statsJSON          `json:"stats"`
+	// CanRebuild is false where the server cannot build the marts itself (a
+	// CronJob builds them in the cluster).
+	CanRebuild bool `json:"can_rebuild"`
+}
+
+type exerciseStatJSON struct {
+	ID              string   `json:"id"`
+	Title           string   `json:"title"`
+	Topic           string   `json:"topic"`
+	Difficulty      int      `json:"difficulty"`
+	Sessions        int      `json:"sessions"`
+	Solves          int      `json:"solves"`
+	SolveRate       *float64 `json:"solve_rate"`
+	AvgHints        *float64 `json:"avg_hints"`
+	AvgSolveSeconds *float64 `json:"avg_solve_seconds"`
+	CalibrationFlag *string  `json:"calibration_flag"`
+}
+
+type progressDayJSON struct {
+	Day      string   `json:"day"` // YYYY-MM-DD, UTC
+	Sessions int      `json:"sessions"`
+	Solves   int      `json:"solves"`
+	AvgStars *float64 `json:"avg_stars"`
+}
+
+// handleStats is the statistics view (spec section 7.3): the per-exercise
+// statistics and the learner's results per day, both read from the marts,
+// and the state of the statistics. Before the first build it returns empty
+// lists with built false.
+func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	lang := s.lang(ctx)
+	out := statsPageJSON{Exercises: []exerciseStatJSON{}, Days: []progressDayJSON{}, CanRebuild: s.cfg.CanRebuild}
+
+	rows, err := s.cfg.Store.MartExerciseStats(ctx)
+	switch {
+	case errors.Is(err, store.ErrNoMarts):
+	case err != nil:
+		s.failErr(w, lang, err)
+		return
+	default:
+		out.Built = true
+		for _, st := range rows {
+			ticket, err := play.CatalogTicket(s.cfg.ExercisesDir, st.ExerciseID, lang)
+			if err != nil {
+				s.failErr(w, lang, err)
+				return
+			}
+			out.Exercises = append(out.Exercises, exerciseStatJSON{
+				ID: st.ExerciseID, Title: ticket.Title, Topic: st.Topic, Difficulty: st.Difficulty,
+				Sessions: st.Sessions, Solves: st.Solves, SolveRate: st.SolveRate, AvgHints: st.AvgHints,
+				AvgSolveSeconds: st.AvgSolveSeconds, CalibrationFlag: st.CalibrationFlag,
+			})
+		}
+	}
+	days, err := s.cfg.Store.MartProgress(ctx, s.cfg.LearnerID)
+	switch {
+	case errors.Is(err, store.ErrNoMarts):
+	case err != nil:
+		s.failErr(w, lang, err)
+		return
+	default:
+		for _, d := range days {
+			out.Days = append(out.Days, progressDayJSON{Day: d.Day.UTC().Format("2006-01-02"), Sessions: d.Sessions, Solves: d.Solves, AvgStars: d.AvgStars})
+		}
+	}
+	fresh, err := s.cfg.Store.MartsFresh(ctx, s.cfg.LearnerID)
+	if err != nil {
+		s.failErr(w, lang, err)
+		return
+	}
+	out.Stats = statsJSON{Fresh: fresh, Updating: s.stats.busy()}
+	if out.Stats.BuiltAt, err = s.cfg.Store.StatsBuiltAt(ctx); err != nil {
+		s.failErr(w, lang, err)
+		return
+	}
+	if err := s.stats.err(); err != nil {
+		out.Stats.Error = plainText(s.cfg.Describe(lang, err))
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// handleRebuild starts a statistics rebuild in the background, even if the
+// marts are fresh. One runs at a time: while one is running it answers 409.
+// Where the server cannot build (CanRebuild false) it answers 404.
+func (s *Server) handleRebuild(w http.ResponseWriter, r *http.Request) {
+	lang := s.lang(r.Context())
+	if !s.cfg.CanRebuild {
+		s.fail(w, http.StatusNotFound, lang, "web.stats.rebuild_unavailable", nil)
+		return
+	}
+	if err := s.stats.force(); errors.Is(err, errBusy) {
+		s.fail(w, http.StatusConflict, lang, "web.stats.rebuild_running", nil)
+		return
+	}
+	w.WriteHeader(http.StatusAccepted)
+}
+
+// setStarting records the start in progress, or none.
+func (s *Server) setStarting(st *startingJSON) {
+	s.startMu.Lock()
+	s.starting = st
+	s.startMu.Unlock()
 }
 
 // handleActive returns the active session, or 204 if there is none.
@@ -388,7 +556,12 @@ func (s *Server) handleStart(w http.ResponseWriter, r *http.Request) {
 		exerciseID = rec.Pick.Exercise.ID
 	}
 
-	sess, err := s.cfg.Engine.Start(ctx, s.cfg.LearnerID, exerciseID, seed)
+	s.setStarting(&startingJSON{Exercise: exerciseID, Steps: session.StartSteps})
+	defer s.setStarting(nil)
+	progress := session.WithStartProgress(ctx, func(step session.StartStep) {
+		s.setStarting(&startingJSON{Exercise: exerciseID, Step: int(step), Steps: session.StartSteps})
+	})
+	sess, err := s.cfg.Engine.Start(progress, s.cfg.LearnerID, exerciseID, seed)
 	if errors.Is(err, store.ErrActiveSession) {
 		// The CLI started one first (migration 0002 keeps one active session).
 		s.fail(w, http.StatusConflict, lang, "web.error.active_exists", nil)

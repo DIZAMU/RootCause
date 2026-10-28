@@ -137,3 +137,40 @@ func TestPlainText(t *testing.T) {
 		t.Errorf("plainText = %q, want %q", got, want)
 	}
 }
+
+// TestRefresherForce: force builds even when the marts are fresh, and a
+// second force while one runs starts nothing and returns errBusy.
+func TestRefresherForce(t *testing.T) {
+	var builds atomic.Int32
+	release := make(chan struct{})
+	r := newRefresher(context.Background(),
+		func(context.Context) error {
+			builds.Add(1)
+			<-release
+			return nil
+		},
+		func(context.Context) (bool, error) { return true, nil })
+
+	if err := r.force(); err != nil {
+		t.Fatalf("first force: %v", err)
+	}
+	waitFor(t, func() bool { return builds.Load() == 1 })
+	if !r.busy() {
+		t.Error("busy() is false during a forced build")
+	}
+	if err := r.force(); !errors.Is(err, errBusy) {
+		t.Errorf("second force during a build: %v, want errBusy", err)
+	}
+	close(release)
+	r.wait()
+	if n := builds.Load(); n != 1 {
+		t.Errorf("%d builds, want 1", n)
+	}
+	if err := r.force(); err != nil {
+		t.Errorf("force after the build: %v", err)
+	}
+	r.wait()
+	if n := builds.Load(); n != 2 {
+		t.Errorf("%d builds after the second force, want 2", n)
+	}
+}

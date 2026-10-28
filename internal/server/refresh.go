@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 )
@@ -42,11 +43,39 @@ func (r *refresher) run(ctx context.Context) error {
 	if fresh, err := r.fresh(ctx); err == nil && fresh {
 		return nil
 	}
+	return r.buildLocked(ctx)
+}
+
+// buildLocked runs the build and records its error. The caller holds sem.
+func (r *refresher) buildLocked(ctx context.Context) error {
 	err := r.build(ctx)
 	r.mu.Lock()
 	r.lastErr = err
 	r.mu.Unlock()
 	return err
+}
+
+// errBusy means a rebuild is already running or waiting to run.
+var errBusy = errors.New("a statistics rebuild is already running")
+
+// force starts a rebuild in the background even if the marts are fresh, the
+// learner's "rebuild now". Only one runs at a time: if one is running or
+// waiting, force starts nothing and returns errBusy.
+func (r *refresher) force() error {
+	select {
+	case r.sem <- struct{}{}:
+	default:
+		return errBusy
+	}
+	r.pending.Add(1)
+	r.wg.Add(1)
+	go func() {
+		defer r.wg.Done()
+		defer r.pending.Add(-1)
+		defer func() { <-r.sem }()
+		_ = r.buildLocked(r.ctx)
+	}()
+	return nil
 }
 
 // trigger runs a rebuild in the background and returns at once.

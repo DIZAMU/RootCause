@@ -8,7 +8,7 @@ v2 runs sandboxes as pods in a local k3d cluster. k3d runs its node containers p
 
 ## Decision
 
-- Every sandbox pod runs with `hostUsers: false`: pod root maps to an unprivileged host UID range (verified on this kernel: pod root is host UID 3236954112 and up, not 0).
+- Every sandbox pod runs with `hostUsers: false`: pod root maps to an unprivileged range of 65536 host UIDs, different per pod, never 0 (verified on this kernel, and checked by `scripts/k8s-prove.sh`).
 - Since Phase 9 a ValidatingAdmissionPolicy denies any pod in `sandboxes` without it, for every requester (ADR 0012).
 - The privileged k3d nodes are accepted as a known limit for a local, single-user cluster, with the compensations in ADR 0012: user namespaces, the admission policy, Pod Security Admission, RBAC limited to pods in `sandboxes`, default-deny NetworkPolicies, no service account token in sandboxes, and nothing published beyond the host's 127.0.0.1.
 - Rootless k3d (on rootless Docker or Podman) is the future fix for node root. It needs sudo for packages and subordinate ID setup, and k3d's support for it is experimental.

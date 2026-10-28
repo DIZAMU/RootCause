@@ -158,6 +158,41 @@ func (s *Store) MartExerciseStats(ctx context.Context) ([]ExerciseStat, error) {
 	return out, rows.Err()
 }
 
+// ProgressDay is one learner's results on one day (UTC), over all topics.
+type ProgressDay struct {
+	Day      time.Time
+	Sessions int
+	Solves   int
+	AvgStars *float64 // over the day's solves; nil if none
+}
+
+// MartProgress returns the learner's results per day, oldest first, summed
+// over topics from mart_progress. It returns ErrNoMarts if dbt never ran.
+func (s *Store) MartProgress(ctx context.Context, learnerID int) ([]ProgressDay, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT day, sum(sessions)::int, sum(solves)::int,
+		       (sum(avg_stars * solves) / nullif(sum(solves), 0))::float8
+		FROM analytics.mart_progress
+		WHERE learner_id = $1
+		GROUP BY day ORDER BY day`, learnerID)
+	if missingRelation(err) {
+		return nil, ErrNoMarts
+	}
+	if err != nil {
+		return nil, fmt.Errorf("mart_progress: %w", err)
+	}
+	defer rows.Close()
+	var out []ProgressDay
+	for rows.Next() {
+		var d ProgressDay
+		if err := rows.Scan(&d.Day, &d.Sessions, &d.Solves, &d.AvgStars); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
 // ErrNoMarts means the dbt models have never been built in this database.
 var ErrNoMarts = errors.New("the dbt models have not been built yet")
 

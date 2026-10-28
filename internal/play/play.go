@@ -37,6 +37,35 @@ func Texts(exercisesDir string, sess store.Session, lang string) (*exercise.I18n
 	return texts, TextVars(sess), nil
 }
 
+// Ticket is an exercise's ticket header outside a session, for the inbox and
+// the catalog.
+type Ticket struct {
+	Title string
+	From  string
+}
+
+// CatalogTicket returns the ticket title and sender of an exercise in lang,
+// before any session exists. Placeholders are filled from the first value of
+// each variant, a fixed display choice that does not depend on any seed. No
+// derived value exists yet, and the ticket header never uses one.
+func CatalogTicket(exercisesDir, id, lang string) (Ticket, error) {
+	ex, err := exercise.Load(filepath.Join(exercisesDir, id))
+	if err != nil {
+		return Ticket{}, err
+	}
+	texts, err := ex.LoadI18n(lang)
+	if err != nil {
+		return Ticket{}, err
+	}
+	vars := make(map[string]string, len(ex.Variants))
+	for name, values := range ex.Variants {
+		if len(values) > 0 {
+			vars[name] = values[0]
+		}
+	}
+	return Ticket{Title: i18n.Fill(texts.Ticket.Title, vars), From: i18n.Fill(texts.Ticket.From, vars)}, nil
+}
+
 // TextVars collects variant and derived values for placeholder filling.
 func TextVars(sess store.Session) map[string]string {
 	m := make(map[string]string)
