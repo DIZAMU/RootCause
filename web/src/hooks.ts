@@ -1,19 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 
 export type Route =
   | { name: "home" }
-  | { name: "exercises" }
+  | { name: "exercises"; focus?: string }
   | { name: "history" }
+  | { name: "stats" }
   | { name: "session"; id: string };
 
-// parseRoute reads the hash: #/, #/exercises, #/history, #/session/<id>.
+// parseRoute reads the hash: #/, #/exercises (or #/exercises/<id> to show
+// one), #/history, #/stats, #/session/<id>.
 export function parseRoute(hash: string): Route {
   const parts = hash.replace(/^#\/?/, "").split("/");
   switch (parts[0]) {
     case "exercises":
-      return { name: "exercises" };
+      return parts[1] ? { name: "exercises", focus: decodeURIComponent(parts[1]) } : { name: "exercises" };
     case "history":
       return { name: "history" };
+    case "stats":
+      return { name: "stats" };
     case "session":
       if (parts[1]) return { name: "session", id: decodeURIComponent(parts[1]) };
       return { name: "home" };
@@ -29,7 +34,18 @@ export function sessionHref(id: string): string {
 export function useRoute(): Route {
   const [route, setRoute] = useState(() => parseRoute(window.location.hash));
   useEffect(() => {
-    const onHash = () => setRoute(parseRoute(window.location.hash));
+    // A route change cross-fades with the View Transitions API where the
+    // browser has it and the learner has not asked for reduced motion;
+    // otherwise it switches at once.
+    const onHash = () => {
+      const next = parseRoute(window.location.hash);
+      const doc = document as Document & { startViewTransition?: (cb: () => void) => unknown };
+      if (doc.startViewTransition && window.matchMedia("(prefers-reduced-motion: no-preference)").matches) {
+        doc.startViewTransition(() => flushSync(() => setRoute(next)));
+      } else {
+        setRoute(next);
+      }
+    };
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
@@ -119,6 +135,11 @@ export function useTheme(): [Theme, (t: Theme) => void] {
   const [theme, setTheme] = useState<Theme>(readTheme);
   useEffect(() => {
     const root = document.documentElement;
+    // Switch without transitions for a frame, so the whole page does not
+    // fade from one theme to the other.
+    root.classList.add("no-transitions");
+    void root.offsetHeight;
+    requestAnimationFrame(() => requestAnimationFrame(() => root.classList.remove("no-transitions")));
     if (theme === "system") root.removeAttribute("data-theme");
     else root.setAttribute("data-theme", theme);
     try {

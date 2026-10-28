@@ -1,0 +1,223 @@
+/* Design tokens (spec section 11). Two tiers: primitives (ramps) are never
+   used by components; components use only the semantic tokens below, which
+   are defined for light and dark. Contrast of every text and boundary pair
+   was measured on the computed sRGB values: text 4.5:1 or more, controls and
+   focus rings 3:1 or more, in both themes. */
+
+:root {
+  /* Neutral ramp, hue 250. */
+  --gray-0: oklch(0.995 0.002 250);
+  --gray-50: oklch(0.982 0.004 250);
+  --gray-100: oklch(0.962 0.006 250);
+  --gray-150: oklch(0.94 0.008 250);
+  --gray-200: oklch(0.905 0.01 250);
+  --gray-300: oklch(0.84 0.012 250);
+  --gray-400: oklch(0.72 0.014 250);
+  --gray-500: oklch(0.6 0.016 250);
+  --gray-600: oklch(0.51 0.016 250);
+  --gray-700: oklch(0.42 0.016 250);
+  --gray-800: oklch(0.32 0.014 250);
+  --gray-850: oklch(0.26 0.013 250);
+  --gray-900: oklch(0.215 0.012 250);
+  --gray-950: oklch(0.18 0.011 250);
+  --gray-1000: oklch(0.145 0.01 250);
+
+  /* Accent ramp, teal, hue 185. */
+  --teal-50: oklch(0.97 0.03 185);
+  --teal-100: oklch(0.93 0.055 185);
+  --teal-200: oklch(0.87 0.085 185);
+  --teal-300: oklch(0.8 0.11 185);
+  --teal-400: oklch(0.74 0.12 185);
+  --teal-500: oklch(0.63 0.115 185);
+  --teal-600: oklch(0.52 0.1 185);
+  --teal-700: oklch(0.45 0.088 185);
+  --teal-800: oklch(0.37 0.072 185);
+  --teal-900: oklch(0.29 0.055 185);
+  --teal-950: oklch(0.23 0.042 185);
+
+  /* Status, each at least 15 degrees of hue from the accent: pass 150,
+     fail 25, warn 75, info 240. */
+  --pass-600: oklch(0.5 0.15 150);
+  --pass-300: oklch(0.78 0.13 150);
+  --pass-50: oklch(0.955 0.035 150);
+  --pass-900: oklch(0.29 0.055 150);
+  --fail-600: oklch(0.5 0.15 25);
+  --fail-300: oklch(0.78 0.13 25);
+  --fail-50: oklch(0.955 0.035 25);
+  --fail-900: oklch(0.29 0.055 25);
+  --warn-600: oklch(0.5 0.11 75);
+  --warn-300: oklch(0.78 0.13 75);
+  --warn-50: oklch(0.955 0.035 75);
+  --warn-900: oklch(0.29 0.055 75);
+  --info-600: oklch(0.5 0.15 240);
+  --info-300: oklch(0.78 0.13 240);
+  --info-50: oklch(0.955 0.035 240);
+  --info-900: oklch(0.29 0.055 240);
+
+  /* Type. Body 16, interface 14, captions 13, never below 12. */
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
+  --text-display: 1.75rem; /* 28 */
+  --text-h2: 1.375rem; /* 22 */
+  --text-h3: 1.125rem; /* 18 */
+  --text-body: 1rem; /* 16 */
+  --text-ui: 0.875rem; /* 14 */
+  --text-caption: 0.8125rem; /* 13 */
+  --text-min: 0.75rem; /* 12 */
+  --leading-display: 1.1;
+  --leading-heading: 1.25;
+  --leading-body: 1.5;
+  --tracking-display: -0.02em;
+  --tracking-heading: -0.01em;
+  --tracking-label: 0.05em;
+  --prose-width: 68ch;
+
+  /* Space, on a 4 px grid. Inside a group 8; between groups 16 or more. */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+
+  /* Flat panels with hairlines, nearly square corners. Where shapes nest,
+     the outer radius is the inner one plus the border between them. */
+  --radius-inner: 2px;
+  --radius-control: 3px;
+  --radius-panel: calc(var(--radius-control) + 1px);
+  --radius-pill: 999px;
+  --panel-padding: var(--space-6);
+  --hairline: 1px solid var(--color-border-divider);
+
+  /* Hit areas. */
+  --hit-min: 40px;
+  --hit-touch: 44px;
+
+  /* Motion (Phase 10 brief). Transitions name their properties and move
+     only opacity, transform and filter. */
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+  --ease-enter: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  --dur-instant: 100ms;
+  --dur-fast: 150ms;
+  --dur-tab: 200ms;
+  --dur-shared: 250ms;
+  --dur-base: 300ms;
+  --stagger: 100ms;
+  --enter-shift: 12px;
+  --enter-blur: 4px;
+  --press-scale: 0.96;
+  --spinner-delay: 300ms;
+  --spinner-min: 400ms;
+  --solve-total: 1200ms;
+}
+
+/* Semantic tokens, light. */
+:root {
+  --color-bg: var(--gray-50);
+  --color-surface: var(--gray-0);
+  --color-surface-sunken: var(--gray-100);
+  --color-surface-hover: var(--gray-150);
+  --color-text: var(--gray-950);
+  --color-text-secondary: var(--gray-600);
+  --color-text-on-accent: var(--gray-0);
+  --color-border-divider: var(--gray-200);
+  --color-border-control: var(--gray-500);
+  --color-accent: var(--teal-600);
+  --color-accent-hover: var(--teal-700);
+  --color-accent-soft: var(--teal-50);
+  --color-focus: var(--teal-600);
+  --color-pass: var(--pass-600);
+  --color-pass-bg: var(--pass-50);
+  --color-fail: var(--fail-600);
+  --color-fail-bg: var(--fail-50);
+  --color-warn: var(--warn-600);
+  --color-warn-bg: var(--warn-50);
+  --color-info: var(--info-600);
+  --color-info-bg: var(--info-50);
+  --color-star: var(--warn-600);
+  --color-terminal-bg: var(--gray-1000);
+  --color-terminal-text: var(--gray-50);
+  --shadow-card: 0 0 0 1px oklch(0 0 0 / 0.06), 0 1px 2px -1px oklch(0 0 0 / 0.06), 0 2px 4px oklch(0 0 0 / 0.04);
+  --shadow-card-hover: 0 0 0 1px oklch(0 0 0 / 0.09), 0 1px 3px -1px oklch(0 0 0 / 0.09), 0 4px 8px oklch(0 0 0 / 0.06);
+  color-scheme: light;
+}
+
+/* Semantic tokens, dark: the system setting, unless the switch chose light,
+   or the switch chose dark. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-bg: var(--gray-1000);
+    --color-surface: var(--gray-950);
+    --color-surface-sunken: var(--gray-900);
+    --color-surface-hover: var(--gray-850);
+    --color-text: var(--gray-50);
+    --color-text-secondary: var(--gray-400);
+    --color-text-on-accent: var(--gray-1000);
+    --color-border-divider: var(--gray-800);
+    --color-border-control: var(--gray-600);
+    --color-accent: var(--teal-400);
+    --color-accent-hover: var(--teal-300);
+    --color-accent-soft: var(--teal-950);
+    --color-focus: var(--teal-400);
+    --color-pass: var(--pass-300);
+    --color-pass-bg: var(--pass-900);
+    --color-fail: var(--fail-300);
+    --color-fail-bg: var(--fail-900);
+    --color-warn: var(--warn-300);
+    --color-warn-bg: var(--warn-900);
+    --color-info: var(--info-300);
+    --color-info-bg: var(--info-900);
+    --color-star: var(--warn-300);
+    --color-terminal-bg: var(--gray-1000);
+    --color-terminal-text: var(--gray-50);
+    --shadow-card: 0 0 0 1px oklch(1 0 0 / 0.08);
+    --shadow-card-hover: 0 0 0 1px oklch(1 0 0 / 0.14);
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --color-bg: var(--gray-1000);
+  --color-surface: var(--gray-950);
+  --color-surface-sunken: var(--gray-900);
+  --color-surface-hover: var(--gray-850);
+  --color-text: var(--gray-50);
+  --color-text-secondary: var(--gray-400);
+  --color-text-on-accent: var(--gray-1000);
+  --color-border-divider: var(--gray-800);
+  --color-border-control: var(--gray-600);
+  --color-accent: var(--teal-400);
+  --color-accent-hover: var(--teal-300);
+  --color-accent-soft: var(--teal-950);
+  --color-focus: var(--teal-400);
+  --color-pass: var(--pass-300);
+  --color-pass-bg: var(--pass-900);
+  --color-fail: var(--fail-300);
+  --color-fail-bg: var(--fail-900);
+  --color-warn: var(--warn-300);
+  --color-warn-bg: var(--warn-900);
+  --color-info: var(--info-300);
+  --color-info-bg: var(--info-900);
+  --color-star: var(--warn-300);
+  --color-terminal-bg: var(--gray-1000);
+  --color-terminal-text: var(--gray-50);
+  --shadow-card: 0 0 0 1px oklch(1 0 0 / 0.08);
+  --shadow-card-hover: 0 0 0 1px oklch(1 0 0 / 0.14);
+  color-scheme: dark;
+}
+
+/* Reduced motion: movement, scale and blur become a short cross-fade. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --enter-shift: 0px;
+    --enter-blur: 0px;
+    --press-scale: 1;
+    --stagger: 0ms;
+    --dur-base: var(--dur-fast);
+    --dur-tab: var(--dur-fast);
+    --dur-shared: var(--dur-fast);
+    --solve-total: 0ms;
+  }
+}
