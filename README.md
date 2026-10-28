@@ -95,7 +95,11 @@ The dashboard is a React app in `web/`, built into the binary. Building it needs
 2. Build the binary with the dashboard embedded: `go build -tags webdist -o rootcause ./cmd/rootcause`.
 3. Run `./rootcause serve` and open http://localhost:7300 in a browser on Windows. Stop it with Ctrl-C.
 
-The server listens on 127.0.0.1 only. WSL2 forwards `localhost` from Windows to it, so no `.wslconfig` change is needed. Work in the sandbox with `./rootcause shell` in a WSL terminal next to the browser. The dashboard follows the CLI: hints, checks and results from either side show up in both. A binary built without `-tags webdist` still runs `serve`, but shows a page that says how to build the dashboard.
+The server listens on 127.0.0.1 only. WSL2 forwards `localhost` from Windows to it, so no `.wslconfig` change is needed. Work in the sandbox with `./rootcause shell` in a WSL terminal next to the browser; in the cluster the terminal is part of the page.
+
+The home page is an inbox of tickets with the recommended one on top. Press Ctrl+K anywhere for the command palette, Ctrl+Enter to run the check (in the terminal too), and `?` for all shortcuts. In the terminal, Tab completes; press Esc, then Tab, to move on with the keyboard.
+
+`scripts/ui-check.sh <url> <active-session> <finished-session>` checks the dashboard in Windows' Chrome on this laptop: accessibility (axe-core, downloaded once into `~/.cache/rootcause` and checked against a pinned SHA-256), layout shift, the keyboard rules, the Tab order, terminal latency and the CSP, with screenshots in both languages. Point it at a server on a test database: it runs a real check. The dashboard follows the CLI: hints, checks and results from either side show up in both. A binary built without `-tags webdist` still runs `serve`, but shows a page that says how to build the dashboard.
 
 Exercises that boot systemd (such as svc-02) need a host with cgroup v2. WSL2 uses cgroup v2 by default. Check with `docker info --format '{{.CgroupVersion}}'`, which must print `2`.
 

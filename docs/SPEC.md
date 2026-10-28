@@ -346,23 +346,31 @@ Every dbt container is labelled with its database. Before a build, containers le
 | `rootcause serve [--port N] [--listen-all]` | Starts the local dashboard on 127.0.0.1, port 7300 by default, until Ctrl-C. Reaps expired sessions every minute while it runs. `--listen-all` is for the cluster deployment only and is refused unless `RC_RUNTIME=kubernetes` |
 | `rootcause lang en\|no` | Sets the interface language |
 
-## 11. Dashboard (v1)
+## 11. Dashboard
 
-- Home: recommended next exercise, topic levels, review queue.
-- Exercise view: ticket, hint buttons, check, reset, give up, result and walkthrough. Shows the `rootcause shell` command, or, when the runtime has a web terminal (v2), the terminal itself. The terminal closes when its session ends.
-- Home shows when the statistics were last built.
-- History: past sessions with stars and outcome.
-- Exercise list with best stars per exercise.
-- EN/NO toggle. It sets the profile language, the same one `rootcause lang` sets.
-- Own visual identity, light and dark mode, desktop-first.
+Rebuilt in Phase 10 as a calm workbench: flat panels divided by hairlines, nearly square corners, Inter for text and JetBrains Mono for ids, commands and the terminal, a teal accent, light and dark (following the system unless switched).
+
+- Sidebar: Inbox, Exercises, History, Stats and the session in progress; the five topic level rings; the EN/NO and theme switches; the keyboard shortcuts. It collapses to icons (remembered per browser), and becomes a top bar on a phone.
+- Inbox (home): the tickets as a helpdesk inbox, one row each with title and sender, topic, difficulty, a status tag (next, due, new, tried, solved with best stars) and the exercise id. The recommended ticket is pinned first, with why it was picked: the rule, the last result and date, and what would change that. A session in progress is pinned above everything. A first visit shows one short tip, which can be hidden.
+- Session start: the engine's real steps (build the image, start the machine, set up, plant the fault) tick off as they happen. Only the exercise id and the step reach the browser.
+- Session: the ticket and hints on the left, the work on the right: a check bar (Run check, Show the next hint with the stars it leaves, Reset, an optional elapsed-time timer, and Give up behind a menu, each destructive action confirmed in place), the last check's result in one line, the terminal (v2) or the `rootcause shell` command (v1), and a check log. A solve plays the app's one expressive animation, under 1.2 s, skippable, never taking focus from the terminal. The terminal closes when its session ends.
+- Exercises: the catalog by topic with difficulty, best stars and when it was last played.
+- History: finished sessions with outcome, stars, hints, checks and time, filtered by topic and outcome.
+- Stats: the topic rings with progress toward the next level, solves per day (one-axis column chart with a data table), and per exercise the sessions, solve rate, hints, time and calibration flag, with "rebuild now" where the server builds the marts itself.
+- Keyboard: Ctrl+K opens a command palette; Ctrl+Enter runs the check, from the terminal too; `g` then `i`, `e`, `h` or `s` goes to a page, `[` folds the sidebar and `?` lists the shortcuts. The single-key ones can be switched off and never fire while typing in a field, a dialog or the terminal. The terminal keeps Tab for completion; Esc, then Tab, leaves it.
+- EN/NO switch. It sets the profile language, the same one `rootcause lang` sets.
+- Accessibility is a floor: WCAG 2.2 AA, every task by keyboard alone, reduced motion respected, layouts that reflow at 320 px and at 200% zoom.
 
 Implementation:
 
 - The app (Vite, React, TypeScript, plain CSS, hash routing) lives in `web/`. `scripts/build-web.sh` builds it into `web/dist` with `npm ci` from the committed lockfile. `go build -tags webdist` embeds it. Without the tag, `/` serves a translated page that says how to build it.
 - `internal/server` is a JSON API over the same engine, selector and store as the CLI. Both front ends call the shared steps in `internal/play` (next pick and seed, exercise texts, statistics rebuild). Exercise texts are filled server-side in the learner's language. UI strings come from `locales/*.json` through `/api/i18n/{lang}`, so there is one copy of every string.
-- Endpoints: `GET /api/overview`, `/api/exercises`, `/api/history`, `/api/session` (the active session, 204 if none), `/api/sessions/{id}`, `/api/i18n/{lang}`; `POST /api/start` (`{"exercise": ""}` starts the recommended one), `/api/hint`, `/api/check`, `/api/reset`, `/api/giveup`; `PUT /api/lang`; `GET /api/terminal` (WebSocket, v2). Actions name the session the page shows and are refused if it is no longer the active one.
+- Endpoints: `GET /api/overview` (with the start in progress and each topic's progress toward the next level), `/api/exercises` (with the ticket header and the latest result), `/api/history`, `/api/stats`, `/api/session` (the active session, 204 if none), `/api/sessions/{id}`, `/api/i18n/{lang}`; `POST /api/start` (`{"exercise": ""}` starts the recommended one), `/api/hint`, `/api/check`, `/api/reset`, `/api/giveup`, `/api/stats/rebuild` (one rebuild at a time, 409 while one runs, 404 where a CronJob builds the marts); `PUT /api/lang`; `GET /api/terminal` (WebSocket, v2). Actions name the session the page shows and are refused if it is no longer the active one.
+- Before a session exists, the inbox and the catalog show each ticket's header filled with the first value of each variant, a fixed display choice. A session shows its own variant.
 - The dashboard follows the CLI by polling: the open session every 2 seconds, the overview every few seconds and on focus. The two front ends share only the database.
 - The session view never contains the seed, variant values or derived values. Hints appear once revealed, and the walkthrough once the session is solved or given up.
+- Everything the dashboard needs is in the binary: the app, its fonts (SIL OFL, licences next to the files) and its icons. It loads nothing from elsewhere, and the CSP did not change for it. The terminal's code loads only on a session page.
+- `scripts/ui-check.sh` checks the dashboard in a real browser on the development laptop: axe-core accessibility rules, no layout shift when data arrives, the keyboard rules, the Tab order, terminal typing latency, the CSP, and screenshots in both languages at 1280, 390 and 320 px. It is not part of CI.
 
 ## 12. Languages
 
@@ -370,6 +378,8 @@ Implementation:
 - Exercise texts live in `exercises/<id>/i18n/{en,no}.yaml`.
 - CI fails if a key exists in one language and not the other.
 - Code, comments, commit messages and docs are in English.
+- Counts use a `_one` / `_other` pair of keys, the two plural forms English and Norwegian both have.
+- Interface text is plain and warm: verbs first on buttons, praise only for what was done, at most one exclamation mark (on a solve without hints), no streaks, guilt or urgency, no em dashes. Layouts leave room for Norwegian, which runs longer.
 
 ## 13. Security model
 
@@ -535,6 +545,13 @@ Done when: a merged change reaches the cluster without manual kubectl.
 - OQ-3 resolved for v2, and the security model reviewed against section 13, including the privileged k3d nodes that run as host root (section 13.3).
 - README with an architecture diagram. The 60-second demo recording moved to the end of Phase 10, so it shows the final dashboard (owner, 2026-10-27).
 - Architecture decision records in `docs/adr/` for each locked decision.
+
+### Phase 10: Dashboard revamp
+- The dashboard of section 11, rebuilt to the owner's UI agreement: sidebar, inbox, catalog, history with filters, stats with a chart, the session workbench, command palette and shortcuts.
+- The real start steps, progress toward the next level, the statistics view and "rebuild now" in the API.
+- The 60-second demo recording, made locally and kept off the internet while the repo is private.
+
+Done when: `scripts/ui-check.sh` passes in both languages: accessibility, no layout shift, reflow at 320 px and at 200% zoom, the keyboard rules (shortcuts, the palette, the check from the terminal, a way out of the terminal), the Tab order, terminal latency unchanged, CSP unchanged.
 
 ## 19. Public readiness checklist
 
