@@ -45,6 +45,7 @@ func (a *App) Serve(ctx context.Context, args []string) error {
 		BuildStats:   a.buildStats,
 		Describe:     func(lang string, err error) string { return Message(a.bundle, lang, err) },
 		Assets:       web.Assets(),
+		CanRebuild:   os.Getenv(EnvDBTMode) != "cronjob",
 	})
 	if err != nil {
 		return err

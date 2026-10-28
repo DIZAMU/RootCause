@@ -195,6 +195,9 @@ func TestGuard(t *testing.T) {
 		{"api, wrong token", "GET", "/api/i18n/en", "", strings.Repeat("0", 64), 403},
 		{"api post, no token", "POST", "/api/start", "", "", 403},
 		{"api preflight", "OPTIONS", "/api/start", "", "", 403},
+		{"stats, no token", "GET", "/api/stats", "", "", 403},
+		{"rebuild, no token", "POST", "/api/stats/rebuild", "", "", 403},
+		{"rebuild, rebinding host with token", "POST", "/api/stats/rebuild", "evil.example:" + r.port, r.token, 403},
 		{"api, token", "GET", "/api/i18n/en", "", r.token, 200},
 		{"api, localhost host", "GET", "/api/i18n/no", "localhost:" + r.port, r.token, 200},
 		{"api, upper-case host", "GET", "/api/i18n/no", "LOCALHOST:" + r.port, r.token, 200},
@@ -237,6 +240,13 @@ type world struct {
 
 func newWorld(t *testing.T, assets bool) *world {
 	t.Helper()
+	return newWorldWith(t, assets, nil)
+}
+
+// newWorldWith is newWorld with a change to the server's config before it
+// starts.
+func newWorldWith(t *testing.T, assets bool, change func(*server.Config)) *world {
+	t.Helper()
 	dsn := testenv.DSN(t)
 	ctx := context.Background()
 	st := testenv.Store(t, dsn)
@@ -263,6 +273,9 @@ func newWorld(t *testing.T, assets bool) *world {
 	}
 	if assets {
 		cfg.Assets = fstest.MapFS{"index.html": {Data: []byte(indexHTML)}}
+	}
+	if change != nil {
+		change(&cfg)
 	}
 	w.running = serve(t, cfg)
 	return w
@@ -574,5 +587,116 @@ func TestContentSecurityPolicy(t *testing.T) {
 	if strings.Contains(csp, "script-src") || strings.Contains(csp, "unsafe-eval") ||
 		strings.Count(csp, "'unsafe-inline'") != 1 || !strings.Contains(csp, "style-src 'self' 'unsafe-inline'") {
 		t.Errorf("policy %q: only style-src may allow inline, scripts must fall back to default-src 'self'", csp)
+	}
+}
+
+// TestRebuildOverAPI: "rebuild now" starts a build even when the marts are
+// fresh, answers 409 while one runs, and 404 where the server cannot build.
+func TestRebuildOverAPI(t *testing.T) {
+	release := make(chan struct{})
+	started := make(chan struct{}, 10)
+	w := newWorldWith(t, true, func(c *server.Config) {
+		c.CanRebuild = true
+		c.BuildStats = func(context.Context) error {
+			started <- struct{}{}
+			<-release
+			return nil
+		}
+	})
+	var page struct {
+		CanRebuild bool `json:"can_rebuild"`
+		Built      bool `json:"built"`
+	}
+	w.api("GET", "/api/stats", nil, 200, &page)
+	if !page.CanRebuild {
+		t.Error("can_rebuild is false with CanRebuild set")
+	}
+	w.api("POST", "/api/stats/rebuild", nil, 202, nil)
+	select {
+	case <-started:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the rebuild did not start")
+	}
+	w.api("POST", "/api/stats/rebuild", nil, 409, nil)
+	close(release)
+
+	off := newWorldWith(t, true, func(c *server.Config) { c.CanRebuild = false })
+	off.api("GET", "/api/stats", nil, 200, &page)
+	if page.CanRebuild {
+		t.Error("can_rebuild is true without CanRebuild")
+	}
+	off.api("POST", "/api/stats/rebuild", nil, 404, nil)
+}
+
+// TestStartProgressInOverview: while a start runs, the overview reports its
+// exercise and step, and nothing from the exercise's variant.
+func TestStartProgressInOverview(t *testing.T) {
+	w := newWorld(t, true)
+	hold, entered := make(chan struct{}), make(chan struct{})
+	w.rt.SetBuildHook(func() {
+		close(entered)
+		<-hold
+	})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		// Not w.api: it calls Fatalf, which may not run outside the test's
+		// own goroutine.
+		res := w.do("POST", "/api/start", "", map[string]string{"exercise": "perm-01-shared-folder"}, w.token)
+		if res.status != 200 {
+			t.Errorf("POST /api/start: status %d: %s", res.status, res.body)
+		}
+	}()
+	select {
+	case <-entered:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the start did not reach the image build")
+	}
+
+	raw := w.api("GET", "/api/overview", nil, 200, nil)
+	var ov struct {
+		Starting *struct {
+			Exercise    string
+			Step, Steps int
+		}
+	}
+	if err := json.Unmarshal(raw, &ov); err != nil {
+		t.Fatal(err)
+	}
+	if ov.Starting == nil || ov.Starting.Exercise != "perm-01-shared-folder" || ov.Starting.Step != 0 || ov.Starting.Steps != session.StartSteps {
+		t.Errorf("starting = %+v, want perm-01 at step 0 of %d", ov.Starting, session.StartSteps)
+	}
+	ex, err := exercise.Load(filepath.Join(w.exDir, "perm-01-shared-folder"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "RC_") {
+		t.Error("the overview contains an RC_ variable name")
+	}
+	// The start itself carries exactly three fields, none from the variant.
+	// (The overview's next pick may show another ticket header, filled for
+	// display; see play.CatalogTicket.)
+	var fields struct {
+		Starting map[string]json.RawMessage `json:"starting"`
+	}
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		t.Fatal(err)
+	}
+	if len(fields.Starting) != 3 || fields.Starting["exercise"] == nil || fields.Starting["step"] == nil || fields.Starting["steps"] == nil {
+		t.Errorf("starting has fields %v, want exactly exercise, step, steps", fields.Starting)
+	}
+	startingRaw, _ := json.Marshal(fields.Starting)
+	for name, values := range ex.Variants {
+		for _, v := range values {
+			if strings.Contains(string(startingRaw), v) || strings.Contains(string(startingRaw), name) {
+				t.Errorf("starting contains variant %s or its value %q: %s", name, v, startingRaw)
+			}
+		}
+	}
+	close(hold)
+	<-done
+	w.api("GET", "/api/overview", nil, 200, &ov)
+	if ov.Starting != nil {
+		t.Errorf("starting is still set after the start: %+v", ov.Starting)
 	}
 }
