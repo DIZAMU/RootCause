@@ -80,3 +80,29 @@ func TestLevel(t *testing.T) {
 		})
 	}
 }
+
+func TestProgress(t *testing.T) {
+	tests := []struct {
+		name          string
+		outcomes      []Outcome
+		level, streak int
+	}{
+		{"nothing yet", nil, 1, 0},
+		{"one strong at level 1", []Outcome{st(1)}, 1, 1},
+		{"a level up resets the streak", []Outcome{st(1), st(1)}, 2, 0},
+		{"one strong at level 2", []Outcome{st(1), st(1), st(2)}, 2, 1},
+		{"a below-level solve does not count", []Outcome{st(1), st(1), st(1)}, 2, 0},
+		{"a weak solve resets it", []Outcome{st(1), wk(1)}, 1, 0},
+		{"a fail resets it", []Outcome{st(1), fl(1)}, 1, 0},
+		{"no streak at the top level", []Outcome{st(1), st(1), st(2), st(2), st(3)}, 3, 0},
+	}
+	for _, tt := range tests {
+		level, streak := Progress(tt.outcomes)
+		if level != tt.level || streak != tt.streak {
+			t.Errorf("%s: Progress = (%d, %d), want (%d, %d)", tt.name, level, streak, tt.level, tt.streak)
+		}
+		if l := Level(tt.outcomes); l != level {
+			t.Errorf("%s: Level = %d, Progress level = %d", tt.name, l, level)
+		}
+	}
+}

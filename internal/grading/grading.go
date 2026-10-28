@@ -62,6 +62,21 @@ type Outcome struct {
 // skipped outcome, it neither advances nor resets either streak. Fails count at
 // any difficulty.
 func Level(outcomes []Outcome) int {
+	level, _ := Progress(outcomes)
+	return level
+}
+
+// StreakToLevelUp is how many consecutive strong solves at the current level
+// raise it (spec section 7.1).
+const StreakToLevelUp = 2
+
+// MaxLevel is the highest topic level in v1.
+const MaxLevel = 3
+
+// Progress replays outcomes like Level and also returns the current streak
+// of strong solves toward the next level: 0 or 1 of StreakToLevelUp. At
+// MaxLevel the streak is always 0.
+func Progress(outcomes []Outcome) (level, streak int) {
 	level, up, down := 1, 0, 0
 	for _, o := range outcomes {
 		switch o.Kind {
@@ -80,7 +95,7 @@ func Level(outcomes []Outcome) int {
 			continue
 		}
 		switch {
-		case up >= 2 && level < 3:
+		case up >= StreakToLevelUp && level < MaxLevel:
 			level++
 			up, down = 0, 0
 		case down >= 2 && level > 1:
@@ -88,5 +103,8 @@ func Level(outcomes []Outcome) int {
 			up, down = 0, 0
 		}
 	}
-	return level
+	if level == MaxLevel {
+		up = 0
+	}
+	return level, up
 }
