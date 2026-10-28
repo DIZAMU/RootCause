@@ -44,6 +44,7 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/check", s.handleCheck)
 	mux.HandleFunc("POST /api/reset", s.handleReset)
 	mux.HandleFunc("POST /api/giveup", s.handleGiveUp)
+	mux.HandleFunc("POST /api/data/reset", s.handleWipe)
 	mux.HandleFunc("PUT /api/lang", s.handleSetLang)
 	mux.HandleFunc("GET /api/i18n/{lang}", s.handleStrings)
 	mux.HandleFunc("GET "+TerminalPath, s.handleTerminal)
@@ -691,6 +692,44 @@ func (s *Server) handleGiveUp(w http.ResponseWriter, r *http.Request) {
 	}
 	s.stats.trigger()
 	s.writeSessionByID(w, ctx, lang, sess.ID, nil)
+}
+
+// WipeConfirm is the value POST /api/data/reset needs in its confirm field.
+// The dashboard sends it only after the learner typed the confirmation word.
+const WipeConfirm = "RESET"
+
+type wipeJSON struct {
+	Sandboxes int `json:"sandboxes"` // sandboxes destroyed
+}
+
+// handleWipe deletes all of the learner's data (session.Engine.WipeAll): the
+// active session and its sandbox, the history, the levels, the statistics
+// and the settings. One runs at a time, and never while another action, a
+// session start among them, is running: then it answers 409. Afterwards the
+// statistics rebuild where the server builds them; in the cluster they read
+// as never built until the CronJob runs.
+func (s *Server) handleWipe(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	lang := s.lang(ctx)
+	var body struct {
+		Confirm string `json:"confirm"`
+	}
+	if err := decode(r, &body); err != nil || body.Confirm != WipeConfirm {
+		s.fail(w, http.StatusBadRequest, lang, "web.wipe.confirm_required", nil)
+		return
+	}
+	if !s.actions.TryLock() {
+		s.fail(w, http.StatusConflict, lang, "web.wipe.busy", nil)
+		return
+	}
+	defer s.actions.Unlock()
+	n, err := s.cfg.Engine.WipeAll(ctx, s.cfg.LearnerID)
+	if err != nil {
+		s.failErr(w, lang, err)
+		return
+	}
+	s.stats.trigger()
+	writeJSON(w, http.StatusOK, wipeJSON{Sandboxes: n})
 }
 
 // --- helpers -----------------------------------------------------------------

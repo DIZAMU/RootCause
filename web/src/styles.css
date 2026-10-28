@@ -133,6 +133,9 @@ pre,
 
 /* --- layout ------------------------------------------------------------- */
 
+/* The sidebar is 232 px wide, or a 64 px rail when collapsed: 12 px either
+   side of a 40 px control. Width and labels animate only after the learner
+   first toggles it (.is-animating), never on the first paint. */
 .app {
   display: grid;
   grid-template-columns: 232px minmax(0, 1fr);
@@ -140,7 +143,10 @@ pre,
   min-height: 100dvh;
 }
 .app.is-collapsed {
-  grid-template-columns: 60px minmax(0, 1fr);
+  grid-template-columns: 64px minmax(0, 1fr);
+}
+.app.is-animating {
+  transition: grid-template-columns var(--dur-shared) var(--ease-out);
 }
 
 .main {
@@ -149,7 +155,8 @@ pre,
 }
 
 .page {
-  max-width: 1240px;
+  max-width: 1440px;
+  margin-inline: auto;
   padding: var(--space-8) var(--space-8) var(--space-16);
   display: grid;
   gap: var(--space-6);
@@ -218,7 +225,11 @@ pre,
   padding: var(--space-4) var(--space-3);
   background: var(--color-surface);
   border-right: var(--hairline);
+  overflow-x: hidden;
   overflow-y: auto;
+}
+.sidebar.is-collapsed {
+  overflow: hidden;
 }
 
 .sidebar-head {
@@ -233,6 +244,7 @@ pre,
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  min-width: 0;
   padding: 0 var(--space-2);
   color: var(--color-text);
   text-decoration: none;
@@ -241,6 +253,12 @@ pre,
 }
 .brand:hover {
   color: var(--color-text);
+}
+.brand-name {
+  white-space: nowrap;
+}
+.mark {
+  flex: none;
 }
 .mark path {
   stroke-width: 2.4;
@@ -270,21 +288,28 @@ pre,
   margin: 0;
   padding: 0;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 2px;
 }
+/* The icon sits 11 px in, centred in a 40 px rail control, so it does not
+   move when the sidebar collapses; the label beside it fades out. */
 .nav-item {
   position: relative;
   display: flex;
   align-items: center;
   gap: var(--space-3);
   min-height: var(--hit-min);
-  padding: 0 var(--space-3);
+  padding: 0 11px;
   border-radius: var(--radius-control);
   color: var(--color-text-secondary);
   text-decoration: none;
   font-size: var(--text-ui);
   font-weight: 500;
   transition: background-color var(--dur-instant) var(--ease-out), color var(--dur-instant) var(--ease-out);
+}
+.nav-item > .icon,
+.nav-item > .live-dot {
+  flex: none;
 }
 .nav-item:hover {
   background: var(--color-surface-hover);
@@ -294,14 +319,16 @@ pre,
   color: var(--color-text);
   background: var(--color-surface-sunken);
 }
+/* The current page's indicator is at the sidebar's left edge, in the 12 px
+   gutter before the item, in both states. */
 .nav-item::before {
   content: "";
   position: absolute;
-  left: 0;
+  left: calc(-1 * var(--space-3));
   top: 8px;
   bottom: 8px;
-  width: 2px;
-  border-radius: 2px;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
   background: var(--color-accent);
   scale: 1 0;
   transition: scale var(--dur-tab) var(--ease-out);
@@ -312,6 +339,8 @@ pre,
 .nav-label {
   display: grid;
   min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
 }
 .nav-sub {
   font-size: var(--text-min);
@@ -337,6 +366,7 @@ pre,
 .sidebar-levels h2 {
   padding: 0 var(--space-3);
   margin-bottom: var(--space-2);
+  white-space: nowrap;
 }
 .sidebar-levels ul {
   list-style: none;
@@ -349,9 +379,16 @@ pre,
   display: flex;
   align-items: center;
   gap: var(--space-3);
+  min-width: 0;
   font-size: var(--text-ui);
 }
+.sidebar-levels .ring {
+  flex: none;
+}
 .ring-topic {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
   color: var(--color-text-secondary);
 }
 
@@ -364,28 +401,57 @@ pre,
   padding: var(--space-3) var(--space-2) 0;
   border-top: var(--hairline);
 }
+.sidebar-help {
+  margin-left: auto;
+}
+.rail-lang {
+  position: relative;
+  font: 600 var(--text-min) / 1 var(--font-sans);
+  letter-spacing: var(--tracking-label);
+}
 
-.app.is-collapsed .brand-name,
-.app.is-collapsed .nav-label,
-.app.is-collapsed .ring-topic,
-.app.is-collapsed .sidebar-levels h2 {
+/* Collapsed: the mark over the toggle, the icons, then the compact
+   language, theme and help buttons in one column. The levels are gone. */
+.sidebar.is-collapsed .sidebar-head {
+  flex-direction: column;
+}
+.sidebar.is-collapsed .brand {
+  width: var(--hit-min);
+  padding: 0 8px;
+  overflow: hidden;
+}
+.sidebar.is-collapsed .nav-item {
+  gap: 0;
+}
+.sidebar.is-collapsed .brand-name,
+.sidebar.is-collapsed .nav-label {
+  opacity: 0;
+  translate: -4px 0;
+}
+.sidebar.is-collapsed .sidebar-levels {
   display: none;
 }
-.app.is-collapsed .sidebar-head {
+.sidebar.is-collapsed .sidebar-foot {
   flex-direction: column;
+  flex-wrap: nowrap;
+  padding: var(--space-3) 0 0;
 }
-.app.is-collapsed .nav-item {
-  justify-content: center;
-  padding: 0;
+.sidebar.is-collapsed .sidebar-help {
+  margin-left: 0;
 }
-.app.is-collapsed .sidebar-levels ul {
-  justify-items: center;
+
+.is-animating .brand-name,
+.is-animating .nav-label {
+  transition: opacity var(--dur-shared) var(--ease-out), translate var(--dur-shared) var(--ease-out);
 }
-.app.is-collapsed .sidebar-foot {
-  flex-direction: column;
+.is-animating .sidebar-levels,
+.is-animating .sidebar-foot > * {
+  animation: fade-in var(--dur-shared) var(--ease-out) both;
 }
-.app.is-collapsed .seg {
-  flex-direction: column;
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
 }
 
 /* --- controls ------------------------------------------------------------ */
@@ -426,6 +492,20 @@ pre,
 .btn-primary:hover {
   background: var(--color-accent-hover);
   border-color: var(--color-accent-hover);
+  color: var(--color-text-on-accent);
+}
+.btn-danger {
+  background: var(--color-fail);
+  border-color: var(--color-fail);
+  color: var(--color-text-on-accent);
+}
+.btn-danger:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--color-fail) 85%, var(--color-text));
+  border-color: color-mix(in oklch, var(--color-fail) 85%, var(--color-text));
+  color: var(--color-text-on-accent);
+}
+.btn-danger:disabled:hover {
+  background: var(--color-fail);
   color: var(--color-text-on-accent);
 }
 .btn-quiet {
@@ -826,7 +906,7 @@ kbd {
 /* --- inbox --------------------------------------------------------------- */
 
 .page-inbox {
-  max-width: 1040px;
+  max-width: 1280px;
 }
 
 .stats-line {
@@ -838,20 +918,6 @@ kbd {
 }
 .stats-line.is-fail {
   color: var(--color-fail);
-}
-
-.intro {
-  display: flex;
-  align-items: start;
-  gap: var(--space-4);
-  padding: var(--space-3) var(--space-4);
-  background: var(--color-accent-soft);
-  border-left: 2px solid var(--color-accent);
-  font-size: var(--text-ui);
-}
-.intro p {
-  flex: 1;
-  max-width: var(--prose-width);
 }
 
 .pinned {
@@ -973,7 +1039,31 @@ kbd {
   color: var(--color-text);
 }
 .why-chevron {
-  transition: rotate var(--dur-fast) var(--ease-out);
+  transition: rotate var(--dur-shared) var(--ease-out);
+}
+/* The disclosures open by growing to their height and fading in; browsers
+   without ::details-content open them at once. */
+.why,
+.activity,
+.checklog,
+.chart-table {
+  interpolate-size: allow-keywords;
+}
+.why::details-content,
+.activity::details-content,
+.checklog::details-content,
+.chart-table::details-content {
+  block-size: 0;
+  overflow: clip;
+  opacity: 0;
+  transition: block-size var(--dur-base) var(--ease-out), opacity var(--dur-base) var(--ease-out), content-visibility var(--dur-base) allow-discrete;
+}
+.why[open]::details-content,
+.activity[open]::details-content,
+.checklog[open]::details-content,
+.chart-table[open]::details-content {
+  block-size: auto;
+  opacity: 1;
 }
 details[open] > summary .why-chevron {
   rotate: 90deg;
@@ -1485,7 +1575,7 @@ a.cell-title:hover {
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
   gap: var(--space-6);
 }
 .rings-large li {
@@ -1516,9 +1606,8 @@ a.cell-title:hover {
   gap: var(--space-3);
 }
 .chart-svg {
+  display: block;
   width: 100%;
-  height: auto;
-  max-height: 260px;
   overflow: visible;
 }
 .chart-grid {
@@ -1633,6 +1722,143 @@ a.cell-title:hover {
   accent-color: var(--color-accent);
 }
 
+.dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.dialog-actions form {
+  margin: 0;
+}
+.dialog-actions-spacer {
+  flex: 1;
+}
+
+.dialog-help {
+  width: min(600px, calc(100vw - var(--space-8)));
+  max-height: calc(100dvh - var(--space-8));
+}
+.help-section {
+  display: grid;
+  gap: var(--space-3);
+  padding-top: var(--space-4);
+  border-top: var(--hairline);
+}
+.help-section .note {
+  max-width: var(--prose-width);
+}
+
+.dialog-wipe h2 {
+  font-size: var(--text-h3);
+}
+.field {
+  display: grid;
+  gap: var(--space-2);
+  font-size: var(--text-ui);
+}
+.input {
+  min-height: var(--hit-min);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border-control);
+  border-radius: var(--radius-control);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: var(--text-body);
+}
+.input:focus-visible {
+  outline-offset: 0;
+}
+
+.dialog-intro {
+  width: min(520px, calc(100vw - var(--space-8)));
+}
+.dialog-intro .dialog-body {
+  gap: var(--space-4);
+}
+.intro-art {
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+  border: var(--hairline);
+  border-radius: var(--radius-panel);
+  background: var(--color-surface-sunken);
+  animation: fade-in var(--dur-base) var(--ease-out) both;
+}
+.intro-text {
+  display: grid;
+  gap: var(--space-2);
+  min-height: 8.5rem;
+  align-content: start;
+  animation: enter var(--dur-base) var(--ease-enter) both;
+}
+.intro-text p:last-child {
+  color: var(--color-text-secondary);
+}
+.intro-dots {
+  display: flex;
+  gap: var(--space-2);
+}
+.intro-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-border-control);
+  transition: background-color var(--dur-fast) var(--ease-out), scale var(--dur-fast) var(--ease-out);
+}
+.intro-dot.is-on {
+  background: var(--color-accent);
+  scale: 1.35;
+}
+.art {
+  width: 100%;
+  max-width: 280px;
+  height: auto;
+}
+.art-panel {
+  fill: var(--color-surface);
+  stroke: var(--color-border-divider);
+}
+.art-hi {
+  fill: var(--color-surface);
+  stroke: var(--color-accent);
+}
+.art-ink {
+  fill: var(--color-text);
+}
+.art-soft {
+  fill: var(--color-border-control);
+}
+.art-accent {
+  fill: var(--color-accent);
+}
+.art-line {
+  fill: none;
+  stroke: var(--color-border-control);
+  stroke-width: 1.5;
+}
+.art-star {
+  fill: var(--color-accent);
+}
+.art-term {
+  fill: var(--color-text);
+}
+.art-term-ink {
+  fill: var(--color-bg);
+  opacity: 0.6;
+}
+.art-ring {
+  fill: none;
+  stroke: var(--color-border-divider);
+  stroke-width: 5;
+}
+.art-ring-fill {
+  fill: none;
+  stroke: var(--color-accent);
+  stroke-width: 5;
+  stroke-linecap: round;
+}
+
 .dialog-palette {
   margin-top: 12vh;
 }
@@ -1738,9 +1964,24 @@ a.cell-title:hover {
   .nav-session {
     margin-top: 0;
   }
-  .app .nav-label,
-  .app .brand-name {
-    display: grid;
+  .sidebar.is-collapsed {
+    overflow: visible;
+  }
+  .sidebar.is-collapsed .sidebar-head {
+    flex-direction: row;
+  }
+  .sidebar.is-collapsed .brand {
+    width: auto;
+    padding: 0 var(--space-2);
+    overflow: visible;
+  }
+  .sidebar.is-collapsed .nav-item {
+    gap: var(--space-3);
+  }
+  .sidebar.is-collapsed .nav-label,
+  .sidebar.is-collapsed .brand-name {
+    opacity: 1;
+    translate: none;
   }
   .nav-item {
     white-space: nowrap;
@@ -1821,6 +2062,20 @@ a.cell-title:hover {
 
 @media (prefers-reduced-motion: reduce) {
   .skeleton-bar {
+    animation: none;
+  }
+  /* The sidebar and the disclosures change size at once. */
+  .app.is-animating,
+  .is-animating .brand-name,
+  .is-animating .nav-label,
+  .why::details-content,
+  .activity::details-content,
+  .checklog::details-content,
+  .chart-table::details-content {
+    transition: none;
+  }
+  .is-animating .sidebar-levels,
+  .is-animating .sidebar-foot > * {
     animation: none;
   }
   .spinner {

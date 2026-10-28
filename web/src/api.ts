@@ -154,4 +154,6 @@ export const api = {
   check: (session: string) => request<Session>("POST", "/api/check", { session }),
   reset: (session: string) => request<Session>("POST", "/api/reset", { session }),
   giveUp: (session: string) => request<Session>("POST", "/api/giveup", { session }),
+  // wipe deletes all of the learner's data; the server needs confirm "RESET".
+  wipe: () => request<{ sandboxes: number }>("POST", "/api/data/reset", { confirm: "RESET" }),
 };

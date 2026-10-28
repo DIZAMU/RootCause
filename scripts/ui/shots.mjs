@@ -3,7 +3,7 @@
 // --remote-debugging-port on 127.0.0.1. No npm packages.
 //
 // node shots.mjs <cdp-port> <out-dir> <plan.json>
-// plan.json: [{name, url, width, height, scheme, motion, waitFor, wait, fullPage}]
+// plan.json: [{name, url, width, height, scale, scheme, motion, waitFor, wait, fullPage}]
 import { writeFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -46,7 +46,7 @@ await send("Log.enable");
 const results = [];
 for (const s of plan) {
   consoleErrors.length = 0;
-  await send("Emulation.setDeviceMetricsOverride", { width: s.width, height: s.height, deviceScaleFactor: 1, mobile: s.width < 600 });
+  await send("Emulation.setDeviceMetricsOverride", { width: s.width, height: s.height, deviceScaleFactor: s.scale ?? 1, mobile: s.width < 600 });
   await send("Emulation.setEmulatedMedia", { features: [
     { name: "prefers-color-scheme", value: s.scheme ?? "light" },
     { name: "prefers-reduced-motion", value: s.motion ?? "no-preference" },

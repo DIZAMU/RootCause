@@ -2,13 +2,29 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { api, type ExerciseRow, type Overview } from "../api";
 import { sessionHref } from "../hooks";
 import { useI18n } from "../i18n";
+import { clearPrefs } from "../prefs";
 import { Icon, type IconName } from "../ui/icons";
+import { Banner, Button } from "../ui/kit";
 import { Dialog } from "./Dialog";
 
-// ShortcutsDialog lists the keyboard shortcuts and switches the single-key
-// ones on or off (WCAG 2.1.4).
-export function ShortcutsDialog({ open, onClose, singleKeys, onSingleKeys }: { open: boolean; onClose: () => void; singleKeys: boolean; onSingleKeys: (on: boolean) => void }) {
+// HelpDialog is the "?" overlay: the keyboard shortcuts and the switch for
+// the single-key ones (WCAG 2.1.4), a way to see the intro again, and the
+// "Reset all data" control, which opens WipeDialog on top of it.
+export function HelpDialog({
+  open,
+  onClose,
+  singleKeys,
+  onSingleKeys,
+  onIntro,
+}: {
+  open: boolean;
+  onClose: () => void;
+  singleKeys: boolean;
+  onSingleKeys: (on: boolean) => void;
+  onIntro: () => void;
+}) {
   const { t } = useI18n();
+  const [wipe, setWipe] = useState(false);
   const rows: [string, string][] = [
     ["Ctrl K", "web.shortcuts.palette"],
     ["Ctrl Enter", "web.shortcuts.check"],
@@ -20,36 +36,131 @@ export function ShortcutsDialog({ open, onClose, singleKeys, onSingleKeys }: { o
     ["?", "web.shortcuts.help"],
   ];
   return (
-    <Dialog open={open} onClose={onClose} labelledBy="shortcuts-title" className="dialog-shortcuts">
-      <div className="dialog-body">
-        <header className="dialog-head">
-          <h2 id="shortcuts-title">{t("web.shortcuts.title")}</h2>
-          <form method="dialog">
-            <button className="icon-btn" aria-label={t("web.close")}>
-              <Icon name="close" />
-            </button>
-          </form>
-        </header>
-        <table className="kbd-table">
-          <tbody>
-            {rows.map(([keys, label]) => (
-              <tr key={keys} className={keys.length <= 3 && !singleKeys ? "is-off" : undefined}>
-                <td>
-                  {keys.split(" ").map((k) => (
-                    <kbd key={k}>{k}</kbd>
-                  ))}
-                </td>
-                <td>{t(label)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <label className="switch">
-          <input type="checkbox" checked={singleKeys} onChange={(e) => onSingleKeys(e.target.checked)} />
-          <span>{t("web.shortcuts.single_keys")}</span>
-        </label>
-        <p className="note">{t("web.shortcuts.note")}</p>
-      </div>
+    <>
+      <Dialog open={open} onClose={onClose} labelledBy="help-title" className="dialog-help">
+        <div className="dialog-body">
+          <header className="dialog-head">
+            <h2 id="help-title">{t("web.help.title")}</h2>
+            <form method="dialog">
+              <button className="icon-btn" aria-label={t("web.close")}>
+                <Icon name="close" />
+              </button>
+            </form>
+          </header>
+          <section className="help-section" aria-labelledby="help-keys">
+            <h3 id="help-keys">{t("web.shortcuts.title")}</h3>
+            <table className="kbd-table">
+              <tbody>
+                {rows.map(([keys, label]) => (
+                  <tr key={keys} className={keys.length <= 3 && !singleKeys ? "is-off" : undefined}>
+                    <td>
+                      {keys.split(" ").map((k) => (
+                        <kbd key={k}>{k}</kbd>
+                      ))}
+                    </td>
+                    <td>{t(label)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <label className="switch">
+              <input type="checkbox" checked={singleKeys} onChange={(e) => onSingleKeys(e.target.checked)} />
+              <span>{t("web.shortcuts.single_keys")}</span>
+            </label>
+            <p className="note">{t("web.shortcuts.note")}</p>
+          </section>
+          <section className="help-section" aria-labelledby="help-intro">
+            <h3 id="help-intro">{t("web.help.intro_title")}</h3>
+            <div>
+              <button type="button" className="btn btn-secondary help-intro" onClick={onIntro}>
+                <Icon name="play" />
+                <span className="btn-label">{t("web.help.intro")}</span>
+              </button>
+            </div>
+          </section>
+          <section className="help-section" aria-labelledby="help-data">
+            <h3 id="help-data">{t("web.help.data_title")}</h3>
+            <p className="note">{t("web.help.data_body")}</p>
+            <div>
+              <button type="button" className="btn btn-secondary help-wipe" onClick={() => setWipe(true)}>
+                <Icon name="trash" />
+                <span className="btn-label">{t("web.wipe.open")}</span>
+              </button>
+            </div>
+          </section>
+        </div>
+      </Dialog>
+      <WipeDialog open={wipe} onClose={() => setWipe(false)} />
+    </>
+  );
+}
+
+// WipeDialog confirms "Reset all data": the learner types the confirmation
+// word before the button works. On success it clears this browser's stored
+// preferences and loads the app fresh, so the intro opens again.
+function WipeDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { t } = useI18n();
+  const [typed, setTyped] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const word = t("web.wipe.word");
+  useEffect(() => {
+    if (!open) return;
+    setTyped("");
+    setError("");
+  }, [open]);
+  const ready = typed.trim() === word && !busy;
+  const run = () => {
+    if (!ready) return;
+    setBusy(true);
+    setError("");
+    api.wipe().then(
+      () => {
+        clearPrefs();
+        window.location.replace(window.location.pathname);
+      },
+      (e: unknown) => {
+        setBusy(false);
+        setError(e instanceof Error ? e.message : String(e));
+      },
+    );
+  };
+  return (
+    <Dialog open={open} onClose={onClose} labelledBy="wipe-title" className="dialog-wipe">
+      <form
+        className="dialog-body"
+        onSubmit={(e) => {
+          e.preventDefault();
+          run();
+        }}
+      >
+        <h2 id="wipe-title">{t("web.wipe.title")}</h2>
+        <p id="wipe-body">{t("web.wipe.body")}</p>
+        <div className="field">
+          <label htmlFor="wipe-word">{t("web.wipe.type", { word })}</label>
+          <input
+            id="wipe-word"
+            className="input mono"
+            autoComplete="off"
+            autoCapitalize="characters"
+            spellCheck={false}
+            aria-describedby="wipe-body"
+            value={typed}
+            disabled={busy}
+            onChange={(e) => setTyped(e.target.value)}
+          />
+        </div>
+        {error && <Banner tone="fail">{error}</Banner>}
+        <footer className="dialog-actions">
+          <span className="dialog-actions-spacer" />
+          <Button variant="secondary" className="wipe-cancel" disabled={busy} onClick={onClose}>
+            {t("web.cancel")}
+          </Button>
+          <Button type="submit" variant="danger" className="wipe-confirm" icon="trash" busy={busy} disabled={!ready}>
+            {t("web.wipe.confirm")}
+          </Button>
+        </footer>
+      </form>
     </Dialog>
   );
 }

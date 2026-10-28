@@ -198,6 +198,8 @@ func TestGuard(t *testing.T) {
 		{"stats, no token", "GET", "/api/stats", "", "", 403},
 		{"rebuild, no token", "POST", "/api/stats/rebuild", "", "", 403},
 		{"rebuild, rebinding host with token", "POST", "/api/stats/rebuild", "evil.example:" + r.port, r.token, 403},
+		{"data reset, no token", "POST", "/api/data/reset", "", "", 403},
+		{"data reset, rebinding host with token", "POST", "/api/data/reset", "evil.example:" + r.port, r.token, 403},
 		{"api, token", "GET", "/api/i18n/en", "", r.token, 200},
 		{"api, localhost host", "GET", "/api/i18n/no", "localhost:" + r.port, r.token, 200},
 		{"api, upper-case host", "GET", "/api/i18n/no", "LOCALHOST:" + r.port, r.token, 200},
@@ -247,7 +249,12 @@ func newWorld(t *testing.T, assets bool) *world {
 // starts.
 func newWorldWith(t *testing.T, assets bool, change func(*server.Config)) *world {
 	t.Helper()
-	dsn := testenv.DSN(t)
+	return newWorldOn(t, testenv.DSN(t), assets, change)
+}
+
+// newWorldOn is newWorldWith on the database in dsn.
+func newWorldOn(t *testing.T, dsn string, assets bool, change func(*server.Config)) *world {
+	t.Helper()
 	ctx := context.Background()
 	st := testenv.Store(t, dsn)
 	bundle, err := i18n.Load(locales.FS)

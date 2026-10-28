@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, type StatsPage, type TopicLevel } from "../api";
 import { usePoll } from "../hooks";
 import { useI18n } from "../i18n";
@@ -154,16 +154,26 @@ export function Stats({ levels }: { levels: TopicLevel[] | undefined }) {
 }
 
 // DaysChart draws solves per day as columns on one axis. Every column has a
-// tooltip on hover and focus, and the same numbers are in a table below.
+// tooltip on hover and focus, and the same numbers are in a table below. The
+// drawing is as wide as its box at one unit per pixel, so it fills a wide
+// screen and its text stays at its size; the height is fixed.
 function DaysChart({ days }: { days: StatsPage["days"] }) {
   const { t, num, lang } = useI18n();
   const [hover, setHover] = useState<number | null>(null);
+  const box = useRef<HTMLDivElement>(null);
+  const [W, setW] = useState(640);
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([e]) => e && setW(Math.max(280, Math.round(e.contentRect.width))));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   const shown = days.slice(-30);
   const max = Math.max(1, ...shown.map((d) => d.solves));
   const ticks = niceTicks(max);
   const top = ticks[ticks.length - 1] ?? 1;
-  const W = 640,
-    H = 200,
+  const H = 220,
     left = 32,
     bottom = 24,
     plotH = H - bottom - 8;
@@ -173,8 +183,8 @@ function DaysChart({ days }: { days: StatsPage["days"] }) {
   const dayLabel = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString(lang === "no" ? "nb-NO" : "en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
   const tip = hover !== null ? shown[hover] : null;
   return (
-    <div className="chart">
-      <svg viewBox={`0 0 ${W} ${H}`} className="chart-svg" role="img" aria-label={t("web.stats.chart_label", { days: shown.length })}>
+    <div className="chart" ref={box}>
+      <svg viewBox={`0 0 ${W} ${H}`} height={H} className="chart-svg" role="img" aria-label={t("web.stats.chart_label", { days: shown.length })}>
         {ticks.map((v) => (
           <g key={v}>
             <line x1={left} x2={W} y1={y(v)} y2={y(v)} className="chart-grid" />

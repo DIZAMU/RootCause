@@ -642,6 +642,18 @@ func (e *Engine) Expire(ctx context.Context, sess store.Session) (*LevelChange, 
 	return e.applyLevel(ctx, sess.LearnerID, ex.Topic, sess.ID)
 }
 
+// WipeAll deletes all of the learner's data (store.WipeLearnerData), the
+// active session included, then destroys every session sandbox this database
+// started, which after the wipe are all orphans. It returns how many
+// sandboxes it destroyed. The dashboard's "Reset all data" and
+// rootcause reset --all both call it.
+func (e *Engine) WipeAll(ctx context.Context, learnerID int) (int, error) {
+	if err := e.st.WipeLearnerData(ctx, learnerID); err != nil {
+		return 0, err
+	}
+	return NewReaper(e, e.st, 0).ReclaimOrphans(ctx)
+}
+
 // Shell opens an interactive shell in the session's sandbox (v1).
 func (e *Engine) Shell(ctx context.Context, sessionID string) error {
 	sess, err := e.st.SessionByID(ctx, sessionID)
