@@ -98,8 +98,8 @@ check("U1 'gi' outside fields goes to the inbox", (await ev("location.hash")) ==
 // U1 off switch: '?' opens the shortcuts; turning single keys off stops 'g h'.
 await type("?");
 await sleep(300);
-check("'?' opens the shortcut list", await ev("!!document.querySelector('dialog.dialog-shortcuts[open]')"));
-await ev("document.querySelector('dialog.dialog-shortcuts input[type=checkbox]').click()");
+check("'?' opens the shortcut list", await ev("!!document.querySelector('dialog.dialog-help[open]')"));
+await ev("document.querySelector('dialog.dialog-help input[type=checkbox]').click()");
 await key("Escape", "Escape", 27);
 await sleep(300);
 await ev("document.activeElement?.blur()");
@@ -108,7 +108,7 @@ await sleep(400);
 check("U1 with single keys off, 'g h' does nothing", (await ev("location.hash")) === "#/", await ev("location.hash"));
 const pref = await ev("localStorage.getItem('rootcause.prefs')");
 check("U1 the off switch is remembered", (pref ?? "").includes('"shortcuts":false'), pref);
-await ev("localStorage.removeItem('rootcause.prefs')");
+await ev("localStorage.setItem('rootcause.prefs', JSON.stringify({ introDone: true }))");
 
 console.log(results.join("\n"));
 await fetch(`http://127.0.0.1:${port}/json/close/${target.id}`);

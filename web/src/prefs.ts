@@ -7,11 +7,23 @@ export interface Prefs {
   sidebarCollapsed: boolean;
   shortcuts: boolean; // the single-key shortcuts (g i, ?), WCAG 2.1.4
   timer: boolean; // show the elapsed time in a session
-  introDismissed: boolean;
+  introDone: boolean; // the guided intro was finished or skipped
 }
 
-const defaults: Prefs = { sidebarCollapsed: false, shortcuts: true, timer: false, introDismissed: false };
+const defaults: Prefs = { sidebarCollapsed: false, shortcuts: true, timer: false, introDone: false };
 const key = "rootcause.prefs";
+
+// clearPrefs removes every preference this app stored, for "Reset all data".
+export function clearPrefs() {
+  try {
+    for (let i = window.localStorage.length - 1; i >= 0; i--) {
+      const k = window.localStorage.key(i);
+      if (k?.startsWith("rootcause.")) window.localStorage.removeItem(k);
+    }
+  } catch {
+    // blocked: nothing was stored
+  }
+}
 
 function read(): Prefs {
   try {

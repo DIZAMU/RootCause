@@ -11,7 +11,7 @@ interface Props {
   onTheme: (t: Theme) => void;
   collapsed: boolean;
   onCollapse: (collapsed: boolean) => void;
-  onShortcuts: () => void;
+  onHelp: () => void;
 }
 
 const pages: { name: Route["name"]; href: string; icon: IconName; label: string }[] = [
@@ -21,17 +21,24 @@ const pages: { name: Route["name"]; href: string; icon: IconName; label: string 
   { name: "stats", href: "#/stats", icon: "stats", label: "web.nav.stats" },
 ];
 
+const themes: Theme[] = ["system", "light", "dark"];
+const themeIcons: Record<Theme, IconName> = { system: "monitor", light: "sun", dark: "moon" };
+
 // Sidebar is the app's navigation (spec section 11): the pages, the active
-// session, the topic level rings, and the language and theme switches. It
-// collapses to icons on a desktop and becomes a top bar on a phone.
-export function Sidebar({ route, overview, theme, onTheme, collapsed, onCollapse, onShortcuts }: Props) {
+// session, the topic level rings, the language and theme switches, and the
+// help button. On a desktop it collapses to a rail of icons: the rings go,
+// and the two switches become one button each that moves to the next value.
+// On a phone it becomes a top bar.
+export function Sidebar({ route, overview, theme, onTheme, collapsed, onCollapse, onHelp }: Props) {
   const { t, lang, setLang } = useI18n();
   const levelLabel = useLevelLabel();
   const active = overview?.active;
+  const otherLang: Lang = lang === "no" ? "en" : "no";
+  const nextTheme = themes[(themes.indexOf(theme) + 1) % themes.length] ?? "system";
   return (
     <nav className={collapsed ? "sidebar is-collapsed" : "sidebar"} aria-label={t("web.nav.label")}>
       <div className="sidebar-head">
-        <a href="#/" className="brand" aria-label={t("web.app_name")}>
+        <a href="#/" className="brand" aria-label={t("web.app_name")} title={t("web.app_name")}>
           <Mark />
           <span className="brand-name">{t("web.app_name")}</span>
         </a>
@@ -65,7 +72,7 @@ export function Sidebar({ route, overview, theme, onTheme, collapsed, onCollapse
               href={sessionHref(active.id)}
               className={route.name === "session" ? "nav-item nav-session is-current" : "nav-item nav-session"}
               aria-current={route.name === "session" ? "page" : undefined}
-              title={collapsed ? t("web.nav.session") : undefined}
+              title={t("web.nav.session")}
             >
               <span className="live-dot" aria-hidden="true" />
               <span className="nav-label">
@@ -78,7 +85,7 @@ export function Sidebar({ route, overview, theme, onTheme, collapsed, onCollapse
       </ul>
 
       {overview && (
-        <section className="sidebar-levels" aria-label={t("web.levels.title")}>
+        <section className="sidebar-levels" aria-label={t("web.levels.title")} inert={collapsed}>
           <h2 className="label">{t("web.levels.title")}</h2>
           <ul>
             {overview.levels.map((l) => {
@@ -95,36 +102,55 @@ export function Sidebar({ route, overview, theme, onTheme, collapsed, onCollapse
       )}
 
       <div className="sidebar-foot">
-        <div className="seg" role="group" aria-label={t("web.lang.label")}>
-          {(["en", "no"] as Lang[]).map((l) => (
-            <button key={l} type="button" className={lang === l ? "seg-btn is-on" : "seg-btn"} aria-pressed={lang === l} onClick={() => setLang(l)}>
-              {l.toUpperCase()}
-            </button>
-          ))}
-        </div>
-        <div className="seg" role="group" aria-label={t("web.theme.label")}>
-          {(
-            [
-              ["system", "monitor"],
-              ["light", "sun"],
-              ["dark", "moon"],
-            ] as [Theme, IconName][]
-          ).map(([value, icon]) => (
+        {collapsed ? (
+          <>
             <button
-              key={value}
               type="button"
-              className={theme === value ? "seg-btn is-on" : "seg-btn"}
-              aria-pressed={theme === value}
-              aria-label={t(`web.theme.${value}`)}
-              title={t(`web.theme.${value}`)}
-              onClick={() => onTheme(value)}
+              className="icon-btn rail-lang"
+              onClick={() => setLang(otherLang)}
+              title={t("web.lang.switch", { current: t(`web.lang.name.${lang}`), other: t(`web.lang.name.${otherLang}`) })}
             >
-              <Icon name={icon} size={16} />
+              {lang.toUpperCase()}
+              <span className="sr-only">, {t("web.lang.switch", { current: t(`web.lang.name.${lang}`), other: t(`web.lang.name.${otherLang}`) })}</span>
             </button>
-          ))}
-        </div>
-        <button type="button" className="icon-btn" onClick={onShortcuts} aria-label={t("web.shortcuts.title")} title={t("web.shortcuts.title")}>
-          <Icon name="keyboard" />
+            <button
+              type="button"
+              className="icon-btn"
+              onClick={() => onTheme(nextTheme)}
+              aria-label={t("web.theme.switch", { current: t(`web.theme.${theme}`), next: t(`web.theme.${nextTheme}`) })}
+              title={t("web.theme.switch", { current: t(`web.theme.${theme}`), next: t(`web.theme.${nextTheme}`) })}
+            >
+              <Icon name={themeIcons[theme]} />
+            </button>
+          </>
+        ) : (
+          <>
+            <div className="seg" role="group" aria-label={t("web.lang.label")}>
+              {(["en", "no"] as Lang[]).map((l) => (
+                <button key={l} type="button" className={lang === l ? "seg-btn is-on" : "seg-btn"} aria-pressed={lang === l} onClick={() => setLang(l)}>
+                  {l.toUpperCase()}
+                </button>
+              ))}
+            </div>
+            <div className="seg" role="group" aria-label={t("web.theme.label")}>
+              {themes.map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={theme === value ? "seg-btn is-on" : "seg-btn"}
+                  aria-pressed={theme === value}
+                  aria-label={t(`web.theme.${value}`)}
+                  title={t(`web.theme.${value}`)}
+                  onClick={() => onTheme(value)}
+                >
+                  <Icon name={themeIcons[value]} size={16} />
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+        <button type="button" className="icon-btn sidebar-help" onClick={onHelp} aria-label={t("web.help.title")} title={t("web.help.title")}>
+          <Icon name="help" />
         </button>
       </div>
     </nav>

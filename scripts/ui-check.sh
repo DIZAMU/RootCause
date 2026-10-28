@@ -2,7 +2,8 @@
 # Checks the dashboard in a real browser (spec section 11): accessibility
 # (axe-core, WCAG 2.2 AA rules), layout shift on data arrival, keyboard rules
 # (shortcuts never reach the terminal or a field, the palette is a modal),
-# the Tab order, terminal typing latency, the CSP header, and screenshots.
+# the Tab order, terminal typing latency, the CSP header, the first-run intro,
+# the collapsed sidebar, wide screens, the reset dialog, and screenshots.
 # A developer tool for this laptop, not CI: it runs Windows' Chrome headless
 # with a throwaway profile, driven over the DevTools protocol on Windows'
 # 127.0.0.1 by Windows' Node. scripts/ui/*.mjs use Node's built-ins only.
@@ -11,7 +12,9 @@
 #
 # The server at base-url must use a test database: the keyboard check runs
 # a real check on the active session. For the terminal checks it runs with
-# RC_RUNTIME=kubernetes. Exit 0 only if every check passes.
+# RC_RUNTIME=kubernetes. With RC_UI_WIPE=1 it ends by resetting all data
+# through the dashboard, which empties that test database. Exit 0 only if
+# every check passes.
 set -euo pipefail
 
 [[ $# -ge 3 && $# -le 4 ]] || { echo "usage: ui-check.sh <base-url> <active-session-id> <finished-session-id> [out-dir]" >&2; exit 2; }
@@ -49,11 +52,19 @@ if ! echo "$AXE_SHA256  $axe" | sha256sum --check --status 2>/dev/null; then
 fi
 cp "$axe" "$out/axe.min.js"
 
+cdp() { win -e "fetch('http://127.0.0.1:$port/json/version').then(r => r.json()).then(j => { $1 }).catch(() => process.exit(1))"; }
+# A browser still on the port would be driven instead of a fresh one, with
+# its stored preferences.
+if cdp "console.log(j.Browser)" >/dev/null 2>&1; then
+	echo "ui-check: something already answers on 127.0.0.1:$port; close it first" >&2
+	exit 1
+fi
 # A throwaway headless Chrome; closed again on exit.
 profile="$(cd /tmp && cmd.exe /c 'echo %TEMP%' 2>/dev/null | tr -d '\r')\\rootcause-ui-check"
+# Emptied first: the intro check needs a browser that stored nothing.
+rm -rf -- "$(wslpath -u "$profile")"
 "$chrome" --headless=new --remote-debugging-port="$port" --remote-debugging-address=127.0.0.1 \
 	--user-data-dir="$profile" --no-first-run --no-default-browser-check --disable-extensions --hide-scrollbars about:blank >/dev/null 2>&1 &
-cdp() { win -e "fetch('http://127.0.0.1:$port/json/version').then(r => r.json()).then(j => { $1 }).catch(() => process.exit(1))"; }
 close_chrome() {
 	cdp "const ws = new WebSocket(j.webSocketDebuggerUrl); ws.onopen = () => { ws.send(JSON.stringify({ id: 1, method: 'Browser.close' })); setTimeout(() => process.exit(0), 300); };" >/dev/null 2>&1 || true
 }
@@ -85,6 +96,11 @@ want="$(awk '/^const ContentSecurityPolicy = / { getline next_line; print $0 nex
 	sed 's/^const ContentSecurityPolicy = "//; s/" +[[:space:]]*"//; s/"$//')"
 if [[ "$csp" == "$want" ]]; then echo "PASS  CSP is the server's constant: $csp"; else echo "FAIL  CSP '$csp', the constant says '$want'"; failures=$((failures + 1)); fi
 
+# First, in the fresh profile: the intro needs a browser that stored nothing.
+echo "== shell: intro, sidebar rail, wide screens, reset dialog"
+win "$(winpath "$root/scripts/ui/shell.mjs")" "$port" "$base" "$(winpath "$out/axe.min.js")" >"$out/shell.log" || true
+report "$out/shell.log"
+
 pages="inbox=#/ exercises=#/exercises history=#/history stats=#/stats session=#/session/$active finished=#/session/$finished"
 plan() { # plan <kind> <lang> <scheme>
 	python3 - "$1" "$2" "$3" "$base" "$pages" <<'PY'
@@ -92,12 +108,18 @@ import json, sys
 kind, lang, scheme, base, pages = sys.argv[1:6]
 # 640 x 400 is a 1280 x 800 window at 200% zoom.
 sizes = [(1280, 800), (640, 400), (390, 844), (320, 700)]
+# 1920 x 1080 at 100%, and at 75% zoom (a 2560 x 1440 CSS viewport).
+wide = [("1920", 1920, 1080, 1), ("1920-75", 2560, 1440, 0.75)]
 items = []
 for p in pages.split():
     name, route = p.split("=", 1)
     for w, h in sizes:
         items.append({"name": f"{name}-{lang}-{scheme}-{w}", "url": f"{base}/{route}", "width": w, "height": h,
                       "scheme": scheme, "wait": 4000, "waitFor": "main", "fullPage": True})
+    if kind == "shots":
+        for label, w, h, scale in wide:
+            items.append({"name": f"{name}-{lang}-{scheme}-{label}", "url": f"{base}/{route}", "width": w, "height": h,
+                          "scale": scale, "scheme": scheme, "wait": 4000, "waitFor": "main"})
     if kind == "audit" and lang == "en":
         items.append({"name": f"{name}-{lang}-{scheme}-1280-reduced", "url": f"{base}/{route}", "width": 1280,
                       "height": 800, "scheme": scheme, "motion": "reduce", "wait": 4000})
@@ -145,6 +167,14 @@ if grep -q 'same terminal element after .*: true' "$out/latency.log" && grep -q 
 else
 	echo "FAIL  terminal latency or stability (see above)"
 	failures=$((failures + 1))
+fi
+
+# Last, and only with RC_UI_WIPE=1: really reset all data through the dialog.
+# It empties the test database, so the fixture sessions are gone after it.
+if [[ "${RC_UI_WIPE:-}" == 1 ]]; then
+	echo "== reset all data, for real"
+	win "$(winpath "$root/scripts/ui/shell.mjs")" "$port" "$base" "$(winpath "$out/axe.min.js")" wipe >"$out/wipe.log" || true
+	report "$out/wipe.log"
 fi
 
 echo

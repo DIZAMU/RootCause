@@ -66,7 +66,7 @@ func runApp(ctx context.Context, cmd string, args []string) int {
 	case "check":
 		cmdErr = app.Check(ctx)
 	case "reset":
-		cmdErr = app.Reset(ctx)
+		cmdErr = app.Reset(ctx, args)
 	case "giveup":
 		cmdErr = app.GiveUp(ctx)
 	case "status":

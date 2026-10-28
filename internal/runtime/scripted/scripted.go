@@ -19,6 +19,7 @@ type Runtime struct {
 	checkPasses bool
 	feedback    string
 	buildHook   func()
+	live        map[string]runtime.Sandbox // created and not yet destroyed, by id
 }
 
 // SetBuildHook makes BuildImage call hook first, so a test can hold a start
@@ -36,8 +37,16 @@ func (r *Runtime) SetCheck(passes bool, feedback string) {
 	r.checkPasses, r.feedback = passes, feedback
 }
 
+// Create records the sandbox as live until Destroy.
 func (r *Runtime) Create(_ context.Context, spec runtime.SandboxSpec) (runtime.Sandbox, error) {
-	return runtime.Sandbox{ID: "fake-" + spec.Name, Name: spec.Name, Labels: spec.Labels}, nil
+	b := runtime.Sandbox{ID: "fake-" + spec.Name, Name: spec.Name, Image: spec.Image, Labels: spec.Labels}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.live == nil {
+		r.live = make(map[string]runtime.Sandbox)
+	}
+	r.live[b.ID] = b
+	return b, nil
 }
 
 func (r *Runtime) Exec(_ context.Context, _ string, cmd []string, _ io.Reader) (runtime.ExecResult, error) {
@@ -57,8 +66,26 @@ func (r *Runtime) Exec(_ context.Context, _ string, cmd []string, _ io.Reader) (
 
 func (r *Runtime) CopyIn(context.Context, string, string, []byte) error { return nil }
 func (r *Runtime) Restart(context.Context, string) error                { return nil }
-func (r *Runtime) Destroy(context.Context, string) error                { return nil }
-func (r *Runtime) List(context.Context) ([]runtime.Sandbox, error)      { return nil, nil }
+
+// Destroy forgets the sandbox. An unknown id is not an error, as in Docker's
+// forced removal.
+func (r *Runtime) Destroy(_ context.Context, id string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.live, id)
+	return nil
+}
+
+// List returns the live sandboxes.
+func (r *Runtime) List(context.Context) ([]runtime.Sandbox, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]runtime.Sandbox, 0, len(r.live))
+	for _, b := range r.live {
+		out = append(out, b)
+	}
+	return out, nil
+}
 
 // BuildImage calls the build hook, if set, and succeeds.
 func (r *Runtime) BuildImage(context.Context, string, string) error {

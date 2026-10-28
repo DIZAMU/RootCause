@@ -79,7 +79,7 @@ type Server struct {
 	stats *refresher
 
 	// actions serializes the session actions (start, hint, check, reset,
-	// give up), so a double click cannot run two at once.
+	// give up) and the data reset, so a double click cannot run two at once.
 	actions sync.Mutex
 
 	// starting is the session start in progress, for the overview; nil when

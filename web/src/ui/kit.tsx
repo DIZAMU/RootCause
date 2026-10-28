@@ -27,7 +27,7 @@ export function Mark({ size = 24 }: { size?: number }) {
   );
 }
 
-type Variant = "primary" | "secondary" | "quiet";
+type Variant = "primary" | "secondary" | "quiet" | "danger";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant;

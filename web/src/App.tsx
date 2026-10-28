@@ -3,7 +3,8 @@ import { api, type Lang, type Strings } from "./api";
 import { usePoll, useRoute, useTheme } from "./hooks";
 import { I18nContext, makeI18n } from "./i18n";
 import { usePrefs } from "./prefs";
-import { Palette, ShortcutsDialog, type PaletteItem } from "./shell/Overlays";
+import { Intro } from "./shell/Intro";
+import { HelpDialog, Palette, type PaletteItem } from "./shell/Overlays";
 import { paletteEvent, useShortcuts } from "./shell/keyboard";
 import { Sidebar } from "./shell/Sidebar";
 import { LiveRegionProvider } from "./ui/kit";
@@ -30,6 +31,15 @@ export function App() {
   const [startingHere, setStartingHere] = useState(false);
   const [palette, setPalette] = useState(false);
   const [help, setHelp] = useState(false);
+  // The sidebar animates only once the learner toggles it, never on load.
+  const [sidebarMotion, setSidebarMotion] = useState(false);
+  const setCollapsed = useCallback(
+    (c: boolean) => {
+      setSidebarMotion(true);
+      setPrefs({ sidebarCollapsed: c });
+    },
+    [setPrefs],
+  );
 
   const overview = usePoll(api.overview, startingHere ? startingPollMs : overviewPollMs, lang ?? "");
 
@@ -66,7 +76,7 @@ export function App() {
       window.location.hash = hash;
     }, []),
     help: useCallback(() => setHelp(true), []),
-    toggleSidebar: useCallback(() => setPrefs({ sidebarCollapsed: !prefs.sidebarCollapsed }), [setPrefs, prefs.sidebarCollapsed]),
+    toggleSidebar: useCallback(() => setCollapsed(!prefs.sidebarCollapsed), [setCollapsed, prefs.sidebarCollapsed]),
   });
   useEffect(() => {
     const open = () => setPalette(true);
@@ -98,10 +108,10 @@ export function App() {
     return [
       { id: "act-lang", icon: "flag", label: t("web.palette.switch_lang"), hint: lang === "no" ? "EN" : "NO", run: () => setLang(lang === "no" ? "en" : "no") },
       { id: "act-theme", icon: theme === "dark" ? "sun" : "moon", label: t("web.palette.switch_theme"), run: () => setTheme(theme === "dark" ? "light" : "dark") },
-      { id: "act-sidebar", icon: "panel", label: t("web.shortcuts.sidebar"), hint: "[", run: () => setPrefs({ sidebarCollapsed: !prefs.sidebarCollapsed }) },
-      { id: "act-help", icon: "keyboard", label: t("web.shortcuts.title"), hint: "?", run: () => setHelp(true) },
+      { id: "act-sidebar", icon: "panel", label: t("web.shortcuts.sidebar"), hint: "[", run: () => setCollapsed(!prefs.sidebarCollapsed) },
+      { id: "act-help", icon: "help", label: t("web.help.title"), hint: "?", run: () => setHelp(true) },
     ];
-  }, [i18n, lang, theme, setLang, setTheme, setPrefs, prefs.sidebarCollapsed]);
+  }, [i18n, lang, theme, setLang, setTheme, setCollapsed, prefs.sidebarCollapsed]);
 
   if (!i18n) {
     // No strings yet, so nothing translated can be shown. A failure here
@@ -121,15 +131,15 @@ export function App() {
         <a className="skip-link" href="#main">
           {i18n.t("web.skip")}
         </a>
-        <div className={prefs.sidebarCollapsed ? "app is-collapsed" : "app"}>
+        <div className={["app", prefs.sidebarCollapsed ? "is-collapsed" : "", sidebarMotion ? "is-animating" : ""].join(" ").trim()}>
           <Sidebar
             route={route}
             overview={overview.data}
             theme={theme}
             onTheme={setTheme}
             collapsed={prefs.sidebarCollapsed}
-            onCollapse={(c) => setPrefs({ sidebarCollapsed: c })}
-            onShortcuts={() => setHelp(true)}
+            onCollapse={setCollapsed}
+            onHelp={() => setHelp(true)}
           />
           <main id="main" className="main" tabIndex={-1}>
             {offline && (
@@ -143,7 +153,7 @@ export function App() {
               </div>
             )}
             {route.name === "home" && (
-              <Inbox overview={overview.data} offline={offline} prefs={prefs} setPrefs={setPrefs} reloadOverview={overview.reload} onStarting={setStartingHere} />
+              <Inbox overview={overview.data} offline={offline} reloadOverview={overview.reload} onStarting={setStartingHere} />
             )}
             {route.name === "exercises" && (
               <Exercises focus={route.focus} levels={overview.data?.levels} activeId={activeId} offline={offline} reloadOverview={overview.reload} onStarting={setStartingHere} starting={overview.data?.starting ?? null} />
@@ -163,7 +173,17 @@ export function App() {
             )}
           </main>
         </div>
-        <ShortcutsDialog open={help} onClose={() => setHelp(false)} singleKeys={prefs.shortcuts} onSingleKeys={(on) => setPrefs({ shortcuts: on })} />
+        <HelpDialog
+          open={help}
+          onClose={() => setHelp(false)}
+          singleKeys={prefs.shortcuts}
+          onSingleKeys={(on) => setPrefs({ shortcuts: on })}
+          onIntro={() => {
+            setHelp(false);
+            setPrefs({ introDone: false });
+          }}
+        />
+        <Intro open={!prefs.introDone && !help} onDone={() => setPrefs({ introDone: true })} />
         <Palette open={palette} onClose={() => setPalette(false)} overview={overview.data} actions={paletteActions} />
       </LiveRegionProvider>
     </I18nContext.Provider>

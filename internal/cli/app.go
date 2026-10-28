@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -32,6 +33,7 @@ type App struct {
 	bundle  *i18n.Bundle
 	learner store.Learner
 	out     *os.File
+	in      io.Reader // where confirmations are read from
 }
 
 // NewApp builds the app for commands that need the database. It assumes
@@ -88,7 +90,7 @@ func NewApp(ctx context.Context) (*App, error) {
 	// Best-effort: a reap error must not block the command.
 	_, _ = session.NewReaper(eng, st, 0).ReapOnce(ctx)
 
-	return &App{root: root, dsn: dsn, st: st, eng: eng, runtime: rtName, bundle: bundle, learner: learner, out: os.Stdout}, nil
+	return &App{root: root, dsn: dsn, st: st, eng: eng, runtime: rtName, bundle: bundle, learner: learner, out: os.Stdout, in: os.Stdin}, nil
 }
 
 // EnvDBWait is how many seconds NewApp keeps trying to reach the database

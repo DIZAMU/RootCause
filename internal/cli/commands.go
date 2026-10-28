@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -147,8 +148,28 @@ func (a *App) Check(ctx context.Context) error {
 	return nil
 }
 
-// Reset gives a fresh copy of the same variant.
-func (a *App) Reset(ctx context.Context) error {
+// Reset gives a fresh copy of the same variant. With --all it deletes all of
+// the learner's data instead (see WipeAll).
+func (a *App) Reset(ctx context.Context, args []string) error {
+	all, yes := false, false
+	for _, arg := range args {
+		switch arg {
+		case "--all":
+			all = true
+		case "--yes":
+			yes = true
+		default:
+			a.say("reset.usage", nil)
+			return nil
+		}
+	}
+	if all {
+		return a.WipeAll(ctx, yes)
+	}
+	if yes {
+		a.say("reset.usage", nil)
+		return nil
+	}
 	sess, ok, err := a.active(ctx)
 	if err != nil {
 		return err
@@ -161,6 +182,32 @@ func (a *App) Reset(ctx context.Context) error {
 		return err
 	}
 	a.say("reset.done", nil)
+	return nil
+}
+
+// WipeAll deletes all of the learner's data, the same way the dashboard's
+// "Reset all data" does (session.Engine.WipeAll): the active session and its
+// sandbox, the history, the levels, the statistics and the settings. Unless
+// yes is set, the learner must type the confirmation word first. The
+// statistics are rebuilt afterwards.
+func (a *App) WipeAll(ctx context.Context, yes bool) error {
+	if !yes {
+		word := a.t("wipe.word", nil)
+		a.say("wipe.warning", nil)
+		fmt.Fprint(a.out, a.t("wipe.prompt", map[string]string{"word": word}))
+		line, _ := bufio.NewReader(a.in).ReadString('\n')
+		if strings.TrimSpace(line) != word {
+			a.say("wipe.cancelled", nil)
+			return nil
+		}
+	}
+	n, err := a.eng.WipeAll(ctx, a.learner.ID)
+	if err != nil {
+		return err
+	}
+	a.say("wipe.done", map[string]string{"sandboxes": fmt.Sprint(n)})
+	a.learner.Lang = "en" // the wipe resets the language to the default
+	a.refreshAfterSession(ctx)
 	return nil
 }
 

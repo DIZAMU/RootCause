@@ -25,6 +25,9 @@ const paths: Record<string, string> = {
   timer: "M12 8v5l3 2M12 4a9 9 0 1 0 0 18 9 9 0 0 0 0-18M10 2h4",
   flag: "M5 21V4h11l-2 4 2 4H5",
   arrowRight: "M5 12h14M13 6l6 6-6 6",
+  arrowLeft: "M19 12H5M11 6l-6 6 6 6",
+  help: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6M12 17h.01",
+  trash: "M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3",
 };
 
 export type IconName = keyof typeof paths;

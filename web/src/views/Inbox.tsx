@@ -2,7 +2,6 @@ import { useMemo } from "react";
 import { api, type ExerciseRow, type Overview } from "../api";
 import { sessionHref, usePoll } from "../hooks";
 import { useI18n } from "../i18n";
-import type { Prefs } from "../prefs";
 import { Icon } from "../ui/icons";
 import { Banner, Button, Difficulty, Skeleton, Stars, TopicLabel } from "../ui/kit";
 import { StartProgress, useStart } from "./start";
@@ -10,8 +9,6 @@ import { StartProgress, useStart } from "./start";
 interface Props {
   overview: Overview | undefined;
   offline: boolean;
-  prefs: Prefs;
-  setPrefs: (p: Partial<Prefs>) => void;
   reloadOverview: () => void;
   onStarting: (on: boolean) => void;
 }
@@ -27,13 +24,12 @@ interface Row {
 // Inbox is the home page (spec section 11): the tickets as a helpdesk inbox.
 // The recommended one is pinned first with why it was picked; a session in
 // progress is pinned above everything.
-export function Inbox({ overview, offline, prefs, setPrefs, reloadOverview, onStarting }: Props) {
+export function Inbox({ overview, offline, reloadOverview, onStarting }: Props) {
   const { t } = useI18n();
   const list = usePoll(api.exercises, 15000, "inbox");
   const { start, busy, error } = useStart(reloadOverview, onStarting);
 
   const rows = useMemo(() => (overview && list.data ? inboxRows(overview, list.data) : null), [overview, list.data]);
-  const firstRun = list.data !== undefined && list.data.every((e) => e.last === null);
   const active = overview?.active ?? null;
   const starting = overview?.starting ?? null;
   const locked = active !== null || starting !== null || busy !== null || offline;
@@ -48,15 +44,6 @@ export function Inbox({ overview, offline, prefs, setPrefs, reloadOverview, onSt
       </header>
 
       {error && <Banner tone="fail">{error}</Banner>}
-
-      {firstRun && !prefs.introDismissed && (
-        <div className="intro">
-          <p>{t("web.inbox.intro")}</p>
-          <button type="button" className="icon-btn" onClick={() => setPrefs({ introDismissed: true })} aria-label={t("web.inbox.intro_dismiss")} title={t("web.inbox.intro_dismiss")}>
-            <Icon name="close" size={16} />
-          </button>
-        </div>
-      )}
 
       {active && (
         <a className="pinned pinned-active" href={sessionHref(active.id)}>
