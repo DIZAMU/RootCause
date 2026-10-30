@@ -7,16 +7,18 @@ import { ProgressSteps, useAnnounce } from "../ui/kit";
 // stepKeys name the engine's start steps (session.StartStep), in order.
 const stepKeys = ["web.start.step.image", "web.start.step.machine", "web.start.step.setup", "web.start.step.fault"];
 
-// useStart starts a session ("" = the recommended one) and opens it. While
-// it runs, onStarting(true) makes the app poll the overview fast, so the
-// start steps tick off.
+// useStart starts a session ("" = the recommended one) and opens it. busy is
+// the row that was clicked (row, or the exercise), never re-derived from the
+// recommendation, which moves once the start creates the session. While it
+// runs, onStarting(true) makes the app poll the overview fast, so the start
+// steps tick off.
 export function useStart(reloadOverview: () => void, onStarting: (on: boolean) => void) {
   const announce = useAnnounce();
   const { t } = useI18n();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
-  const start = (exercise: string) => {
-    setBusy(exercise);
+  const start = (exercise: string, row = exercise) => {
+    setBusy(row);
     setError("");
     onStarting(true);
     announce(t("web.start.announce"));

@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import { api, type ExerciseRow, type Overview } from "../api";
 import { sessionHref, usePoll } from "../hooks";
 import { useI18n } from "../i18n";
@@ -29,10 +29,19 @@ export function Inbox({ overview, offline, reloadOverview, onStarting }: Props) 
   const list = usePoll(api.exercises, 15000, "inbox");
   const { start, busy, error } = useStart(reloadOverview, onStarting);
 
-  const rows = useMemo(() => (overview && list.data ? inboxRows(overview, list.data) : null), [overview, list.data]);
-  const active = overview?.active ?? null;
+  const live = useMemo(() => (overview && list.data ? inboxRows(overview, list.data) : null), [overview, list.data]);
   const starting = overview?.starting ?? null;
-  const locked = active !== null || starting !== null || busy !== null || offline;
+  const inStart = busy !== null || starting !== null;
+  // A start creates the session part way through, which moves the
+  // recommendation and the tags; the list holds still until the page opens.
+  const held = useRef<Row[] | null>(null);
+  if (!inStart || !held.current) held.current = live;
+  const rows = inStart ? held.current : live;
+  // The session exists before its machine is ready; it is not "in progress"
+  // until the start is done.
+  const active = inStart ? null : (overview?.active ?? null);
+  const startingId = starting?.exercise ?? busy;
+  const locked = overview?.active != null || inStart || offline;
 
   return (
     <div className="page page-inbox">
@@ -71,9 +80,9 @@ export function Inbox({ overview, offline, reloadOverview, onStarting }: Props) 
               overview={overview!}
               locked={locked}
               lockedReason={offline ? t("web.error.load") : active ? t("web.inbox.locked_active") : undefined}
-              busy={busy === r.ex.id || (busy === "" && r.tag === "next")}
-              onStart={() => start(r.tag === "next" ? "" : r.ex.id)}
-              starting={starting && starting.exercise === r.ex.id ? starting : busy === r.ex.id || (busy === "" && r.tag === "next") ? (starting ?? { exercise: r.ex.id, step: 0, steps: 4 }) : null}
+              busy={busy === r.ex.id}
+              onStart={() => start(r.tag === "next" ? "" : r.ex.id, r.ex.id)}
+              starting={startingId === r.ex.id ? (starting ?? { exercise: r.ex.id, step: 0, steps: 4 }) : null}
             />
           ))}
         </ul>
@@ -147,7 +156,7 @@ function TicketRow({
           </Button>
         </div>
       </div>
-      {next && <WhyPicked overview={overview} ex={ex} />}
+      {next && !starting && <WhyPicked overview={overview} ex={ex} />}
       {starting && <StartProgress starting={starting} />}
     </li>
   );

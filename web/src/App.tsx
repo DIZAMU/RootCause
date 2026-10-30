@@ -183,7 +183,7 @@ export function App() {
             setPrefs({ introDone: false });
           }}
         />
-        <Intro open={!prefs.introDone && !help} onDone={() => setPrefs({ introDone: true })} />
+        <Intro open={!prefs.introDone && !help} terminal={overview.data?.terminal ?? true} onDone={() => setPrefs({ introDone: true })} />
         <Palette open={palette} onClose={() => setPalette(false)} overview={overview.data} actions={paletteActions} />
       </LiveRegionProvider>
     </I18nContext.Provider>

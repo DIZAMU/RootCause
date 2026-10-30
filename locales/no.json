@@ -340,6 +340,8 @@
   "web.intro.inbox.body": "Hver sak er en Linux-server med en feil. Den øverste er valgt for deg: åpne «Hvorfor denne saken» for å se hvorfor.",
   "web.intro.session.title": "Saken til venstre, terminalen til høyre",
   "web.intro.session.body": "Når du åpner en sak, starter en sandkasse. Les saken, finn og rett feilen i terminalen, og kjør sjekken (Ctrl+Enter).",
+  "web.intro.session_shell.title": "Saken her, skallet ved siden av",
+  "web.intro.session_shell.body": "Når du åpner en sak, starter en sandkasse. Les saken, kjør rootcause shell i en terminal for å komme inn på maskinen, finn og rett feilen, og kjør sjekken (Ctrl+Enter).",
   "web.intro.hints.title": "Hint og stjerner",
   "web.intro.hints.body": "Står du fast? Vis et hint. Løser du uten hint, får du 3 stjerner, med ett eller to hint 2 og med alle tre 1. Etter det tredje hintet kan du gi opp og lese gjennomgangen.",
   "web.intro.levels.title": "Nivåer og statistikk",

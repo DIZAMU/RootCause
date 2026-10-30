@@ -340,6 +340,8 @@
   "web.intro.inbox.body": "Each ticket is a Linux server with a fault. The one at the top is picked for you: open \"Why this ticket\" to see why.",
   "web.intro.session.title": "Ticket left, terminal right",
   "web.intro.session.body": "Opening a ticket starts a sandbox. Read the ticket, find and fix the fault in the terminal, then run the check (Ctrl+Enter).",
+  "web.intro.session_shell.title": "Ticket left, shell beside it",
+  "web.intro.session_shell.body": "Opening a ticket starts a sandbox. Read the ticket, run rootcause shell in a terminal to get onto the machine, find and fix the fault, then run the check (Ctrl+Enter).",
   "web.intro.hints.title": "Hints and stars",
   "web.intro.hints.body": "Stuck? Reveal a hint. A solve with no hints earns 3 stars, with one or two hints 2, and with all three 1. After the third hint you can give up and read the walkthrough.",
   "web.intro.levels.title": "Levels and stats",
