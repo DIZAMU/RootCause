@@ -1,5 +1,5 @@
 // Package i18n loads the interface strings from locales/<lang>.json and fills
-// {placeholder} values. No user-facing text is hard-coded in Go (spec section
+// {placeholder} values. No user-facing text is hard-coded in Go (ARCHITECTURE.md section
 // 12); exercise texts live separately in each exercise's i18n folder.
 package i18n
 

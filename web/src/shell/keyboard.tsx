@@ -1,4 +1,4 @@
-// Keyboard shortcuts (spec section 11). Two kinds:
+// Keyboard shortcuts (ARCHITECTURE.md section 11). Two kinds:
 //   - with a modifier: Ctrl+K (or Cmd+K) opens the palette, Ctrl+Enter runs
 //     the check. They work everywhere; inside the terminal, WebTerminal
 //     catches them before the shell sees them and sends the same events.

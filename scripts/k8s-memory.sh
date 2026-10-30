@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Prints the memory the k3d cluster uses (spec section 17, OQ-4): each node
+# Prints the memory the k3d cluster uses (ARCHITECTURE.md section 8.2): each node
 # container's usage from docker, then the working set of every container in
 # the cluster, read from each node's container runtime (the cluster runs no
 # metrics-server). Ends with the WSL2 total from free -m.

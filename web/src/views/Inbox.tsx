@@ -21,7 +21,7 @@ interface Row {
   dueAt?: string;
 }
 
-// Inbox is the home page (spec section 11): the tickets as a helpdesk inbox.
+// Inbox is the home page (ARCHITECTURE.md section 11): the tickets as a helpdesk inbox.
 // The recommended one is pinned first with why it was picked; a session in
 // progress is pinned above everything.
 export function Inbox({ overview, offline, reloadOverview, onStarting }: Props) {

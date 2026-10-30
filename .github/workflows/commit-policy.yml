@@ -1,4 +1,4 @@
-# Commit policy (spec sections 14 and 15): every commit in a pull request has
+# Commit policy (ARCHITECTURE.md sections 14 and 15): every commit in a pull request has
 # no Co-authored-by trailer or tool attribution line, the owner's author and
 # committer email, and a signature GitHub verifies.
 name: commit-policy

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Checks the dashboard in a real browser (spec section 11): accessibility
+# Checks the dashboard in a real browser (ARCHITECTURE.md section 11): accessibility
 # (axe-core, WCAG 2.2 AA rules), layout shift on data arrival, keyboard rules
 # (shortcuts never reach the terminal or a field, the palette is a modal),
 # the Tab order, terminal typing latency, the CSP header, the first-run intro,

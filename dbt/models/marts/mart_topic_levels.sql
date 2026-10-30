@@ -1,4 +1,4 @@
--- The current level per learner and topic (spec section 7.1): the "to" value
+-- The current level per learner and topic (ARCHITECTURE.md section 7.1): the "to" value
 -- of the topic's latest level_changed event, or 1 if it never changed. Also
 -- when the topic was last practiced (any finished session that was not
 -- voided), for the selector's tie-break.

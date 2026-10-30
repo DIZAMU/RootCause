@@ -1,4 +1,4 @@
-# Argo CD core (spec section 8.2): the application controller, the repo
+# Argo CD core (ARCHITECTURE.md section 8.2): the application controller, the repo
 # server and redis, with no UI, no SSO and no notifications. scripts/k8s-up.sh
 # downloads core-install.yaml for the version below, checks its SHA-256, puts
 # it next to this file in a temporary directory and applies the result. The

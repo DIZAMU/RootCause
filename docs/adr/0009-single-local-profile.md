@@ -1,17 +1,16 @@
-# ADR 0009: No accounts, one local profile
+# ADR 0009 · No accounts, one local profile
 
-Status: Accepted (Phase 2). Recorded 2026-10-27.
+Accepted on 2026-10-27.
 
 ## Context
 
-v1 is a single-user practice tool on one laptop.
+RootCause is a single-user practice tool that runs on the learner's own machine.
 
 ## Decision
 
-- No accounts or login. One learner row, named after the OS user.
-- The repository and every artifact stay private until the owner decides otherwise.
+- There are no accounts and no login. One learner row is named after the OS user.
 
 ## Consequences
 
-- No authentication code to secure. The dashboard's protections are about other websites in the same browser, not about other users.
-- Multiple users need a later design.
+- There is no authentication code to secure. The dashboard's protections are about other websites in the same browser, not about other users.
+- Supporting several users would need a new design.

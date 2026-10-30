@@ -1,4 +1,4 @@
-# The local v2 cluster (spec section 8.2): 1 server and 2 agents. Created by
+# The local v2 cluster (ARCHITECTURE.md section 8.2): 1 server and 2 agents. Created by
 # scripts/k8s-up.sh with `k3d cluster create --config`.
 #
 # The dashboard is published on the host's 127.0.0.1:7300 only, through the
@@ -31,7 +31,7 @@ options:
         nodeFilters:
           - server:*
       # Kubernetes has no per-pod process limit; the kubelet applies this one
-      # to every pod (spec section 13.1's limit of 256).
+      # to every pod (ARCHITECTURE.md section 13.1's limit of 256).
       - arg: --kubelet-arg=pod-max-pids=256
         nodeFilters:
           - server:*

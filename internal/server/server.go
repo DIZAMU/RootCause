@@ -1,6 +1,6 @@
-// Package server is the local dashboard (spec section 11): a JSON API over
+// Package server is the local dashboard (ARCHITECTURE.md section 11): a JSON API over
 // the same session engine, selector and store the CLI uses, and the built
-// React app from web/. It binds to 127.0.0.1 only (spec section 13.1).
+// React app from web/. It binds to 127.0.0.1 only (ARCHITECTURE.md section 13.1).
 //
 // Hardening against other websites in the learner's browser: requests whose
 // Host header is not 127.0.0.1:PORT or localhost:PORT are refused, which
@@ -34,7 +34,7 @@ import (
 // BindAddress is the only address the dashboard listens on.
 const BindAddress = "127.0.0.1"
 
-// DefaultPort is the dashboard's port (spec section 8.1).
+// DefaultPort is the dashboard's port (ARCHITECTURE.md section 8.1).
 const DefaultPort = 7300
 
 // ContentSecurityPolicy is sent with every response.

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Checks that deploy/k8s, as Argo CD renders it, holds the admission policy
-# for sandbox pods in full (spec section 13.2): every rule's message from a
+# for sandbox pods in full (ARCHITECTURE.md section 13.2): every rule's message from a
 # to l, failurePolicy Fail, and a binding with validationActions exactly
 # [Deny], scoped to sandboxes, with no matchConditions that could exempt a
 # requester. ci.yml runs it with the pinned kubectl from
@@ -11,10 +11,10 @@
 # contacting a server (the label it adds stays in this pipe), and Python's
 # standard json module reads the result.
 #
-# Usage: scripts/ci-check-admission.sh [kubectl]   (default: kubectl on PATH)
+# Usage: .github/scripts/ci-check-admission.sh [kubectl]   (default: kubectl on PATH)
 set -euo pipefail
 
-root="$(cd "$(dirname "$0")/.." && pwd)"
+root="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$root"
 kubectl="${1:-kubectl}"
 

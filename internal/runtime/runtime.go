@@ -1,5 +1,5 @@
 // Package runtime abstracts the sandbox backend. All sandbox control goes
-// through the Runtime interface (spec section 8.3), so v2 can swap the Docker
+// through the Runtime interface (ARCHITECTURE.md section 8.3), so v2 can swap the Docker
 // implementation for a Kubernetes one without changing any caller.
 package runtime
 
@@ -21,7 +21,7 @@ type Runtime interface {
 	List(ctx context.Context) ([]Sandbox, error)
 }
 
-// SandboxSpec describes a sandbox to create. Security defaults (spec section
+// SandboxSpec describes a sandbox to create. Security defaults (ARCHITECTURE.md section
 // 13.1) are applied by the implementation: all capabilities dropped, limits
 // enforced, no Docker socket, no host network, no privileged mode.
 //

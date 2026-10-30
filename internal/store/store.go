@@ -1,5 +1,5 @@
 // Package store is the engine's PostgreSQL access layer: connection, schema
-// migrations, and the source tables from spec section 9.1. It uses pgx.
+// migrations, and the source tables from ARCHITECTURE.md section 9.1. It uses pgx.
 package store
 
 import (

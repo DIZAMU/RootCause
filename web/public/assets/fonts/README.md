@@ -1,8 +1,8 @@
 # Fonts
 
-Self-hosted, so the dashboard loads nothing from outside the binary. Both
-families are under the SIL Open Font License 1.1, which allows bundling; each
-license file sits next to its fonts.
+The fonts are self-hosted, so the dashboard loads nothing from outside the
+binary. Both families are under the SIL Open Font License 1.1, which allows
+bundling, and each license file sits next to its fonts.
 
 | File | Source | SHA-256 |
 |---|---|---|
@@ -12,4 +12,4 @@ license file sits next to its fonts.
 | JetBrainsMono-Bold.woff2 | `fonts/webfonts/JetBrainsMono-Bold.woff2` in the same archive | c503cc5ec5f8b2c7666b7ecda1adf44bd45f2e6579b2eba0fc292150416588a2 |
 | JetBrainsMono-OFL.txt | `OFL.txt` in the same archive | 30f0c136e3c88e422d0791acd97238870f9054a9729bc34cf2ff0d4ed8cac4ad |
 
-To check them: `sha256sum web/public/assets/fonts/*.woff2 web/public/assets/fonts/*.txt`.
+Check them with `sha256sum web/public/assets/fonts/*.woff2 web/public/assets/fonts/*.txt`.

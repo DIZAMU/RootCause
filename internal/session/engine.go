@@ -1,4 +1,4 @@
-// Package session runs the exercise lifecycle (spec section 8.4): it creates a
+// Package session runs the exercise lifecycle (ARCHITECTURE.md section 8.4): it creates a
 // sandbox from an exercise, plants the fault, grades checks, and logs every
 // action as an event. It wires the exercise loader, the runtime and the store
 // together and is the engine the CLI drives.
@@ -26,7 +26,7 @@ import (
 	"github.com/DIZAMU/RootCause/internal/store"
 )
 
-// Errors the CLI turns into translated messages (spec section 12).
+// Errors the CLI turns into translated messages (ARCHITECTURE.md section 12).
 var (
 	// ErrGiveUpTooEarly means give up was asked for before hint 3.
 	ErrGiveUpTooEarly = errors.New("give up is only available after hint 3")
@@ -274,7 +274,7 @@ func (e *Engine) createSandbox(ctx context.Context, ex *exercise.Exercise, spec 
 
 // prepare turns a fresh sandbox into the broken machine: it runs setup.sh (if
 // the exercise has one) to build the healthy state, then break.sh to plant the
-// fault, and returns the derived values break.sh printed (spec section 4.3).
+// fault, and returns the derived values break.sh printed (ARCHITECTURE.md section 4.3).
 // Both scripts are copied in, run as root and deleted, so neither the healthy
 // config nor the fault logic stays readable inside the sandbox.
 func (e *Engine) prepare(ctx context.Context, sandboxID string, ex *exercise.Exercise, env map[string]string) (map[string]any, error) {
@@ -317,7 +317,7 @@ func (e *Engine) Check(ctx context.Context, sessionID string) (CheckResult, erro
 		return CheckResult{}, fmt.Errorf("run check: %w", err)
 	}
 
-	// Exit 0 is a pass and exit 1 a fail (spec section 4.3). Exit 2, or any
+	// Exit 0 is a pass and exit 1 a fail (ARCHITECTURE.md section 4.3). Exit 2, or any
 	// other code (a crash, an out-of-memory kill), means the check could not
 	// run, so it must never count against the learner.
 	parsed := parseCheck(res.Stdout)
@@ -361,7 +361,7 @@ func (e *Engine) Check(ctx context.Context, sessionID string) (CheckResult, erro
 // readyTimeout bounds how long a restarted sandbox may take to accept commands.
 const readyTimeout = 30 * time.Second
 
-// runCheck runs check.sh the way the exercise asks (spec section 4.2): it
+// runCheck runs check.sh the way the exercise asks (ARCHITECTURE.md section 4.2): it
 // restarts the sandbox first if check.before is "restart", then runs the
 // check inside the sandbox, or, for runs_from "runner", inside a separate
 // runner container on the internal network that reaches the sandbox by name
@@ -472,7 +472,7 @@ func (e *Engine) waitBooted(ctx context.Context, sandboxID string, strict bool) 
 }
 
 // applyLevel recomputes the topic level from all its finished outcomes and, if
-// this session changed it, logs a level_changed event (spec section 7.1). It
+// this session changed it, logs a level_changed event (ARCHITECTURE.md section 7.1). It
 // returns the change, or nil if the level held.
 func (e *Engine) applyLevel(ctx context.Context, learnerID int, topic, sessionID string) (*LevelChange, error) {
 	outs, err := e.st.TopicOutcomes(ctx, learnerID, topic)
@@ -496,7 +496,7 @@ func (e *Engine) applyLevel(ctx context.Context, learnerID int, topic, sessionID
 	return lc, nil
 }
 
-// TopicLevel returns the learner's current level in a topic (spec section
+// TopicLevel returns the learner's current level in a topic (ARCHITECTURE.md section
 // 7.1), replayed from every finished session in that topic.
 func (e *Engine) TopicLevel(ctx context.Context, learnerID int, topic string) (int, error) {
 	outs, err := e.st.TopicOutcomes(ctx, learnerID, topic)
@@ -559,7 +559,7 @@ func (e *Engine) Hint(ctx context.Context, sessionID string) (int, error) {
 }
 
 // Reset rebuilds the sandbox for the same variant and re-plants the fault,
-// keeping revealed hints. It logs reset (spec section 6). If the rebuild
+// keeping revealed hints. It logs reset (ARCHITECTURE.md section 6). If the rebuild
 // fails, the session has no working sandbox, so it is voided with a voided
 // event, the same way as a failed Start.
 func (e *Engine) Reset(ctx context.Context, sessionID string) error {
@@ -597,7 +597,7 @@ func (e *Engine) Reset(ctx context.Context, sessionID string) error {
 }
 
 // GiveUp ends the session (0 stars) and logs gave_up. It is only allowed once
-// hint 3 has been revealed (spec section 6). It returns any level change.
+// hint 3 has been revealed (ARCHITECTURE.md section 6). It returns any level change.
 func (e *Engine) GiveUp(ctx context.Context, sessionID string) (*LevelChange, error) {
 	sess, err := e.st.SessionByID(ctx, sessionID)
 	if err != nil {
@@ -753,7 +753,7 @@ func (e *Engine) execScript(ctx context.Context, sandboxID, dir, name string, en
 }
 
 // scriptEnv builds the RC_SEED and RC_VAR_<NAME> values the exercise scripts
-// receive (spec section 4.3).
+// receive (ARCHITECTURE.md section 4.3).
 func scriptEnv(seed int64, variant map[string]string) map[string]string {
 	env := map[string]string{"RC_SEED": strconv.FormatInt(seed, 10)}
 	for k, v := range variant {

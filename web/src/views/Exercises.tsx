@@ -17,7 +17,7 @@ interface Props {
   onStarting: (on: boolean) => void;
 }
 
-// Exercises is the catalog (spec section 11): every exercise by topic, with
+// Exercises is the catalog (ARCHITECTURE.md section 11): every exercise by topic, with
 // the ticket, difficulty, best stars and when it was last played.
 export function Exercises({ focus, levels, activeId, offline, starting, reloadOverview, onStarting }: Props) {
   const { t, date } = useI18n();

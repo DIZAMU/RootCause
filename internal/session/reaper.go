@@ -9,7 +9,7 @@ import (
 )
 
 // Reaper destroys sandboxes whose session TTL has passed and marks those
-// sessions expired (spec section 8.4 step 8). In v1 it is run once at the start
+// sessions expired (ARCHITECTURE.md section 8.4 step 8). In v1 it is run once at the start
 // of each CLI command and, when the dashboard server exists, on a ticker.
 type Reaper struct {
 	eng      *Engine

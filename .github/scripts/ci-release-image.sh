@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CI helpers for the API image on GHCR (spec section 14). release.yml and
+# CI helpers for the API image on GHCR (ARCHITECTURE.md section 14). release.yml and
 # ci.yml call them; they read GITHUB_TOKEN and GITHUB_ACTOR from the
 # workflow and never print the token.
 #
@@ -15,7 +15,7 @@ repo=dizamu/rootcause-api
 zero=sha256:0000000000000000000000000000000000000000000000000000000000000000
 accept="application/vnd.oci.image.index.v1+json,application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.list.v2+json,application/vnd.docker.distribution.manifest.v2+json"
 
-root="$(cd "$(dirname "$0")/.." && pwd)"
+root="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$root"
 
 die() { echo "ci-release-image: $*" >&2; exit 1; }

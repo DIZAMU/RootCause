@@ -1,6 +1,6 @@
-# Postgres for the cluster (spec section 8.2), on a local-path volume. The
+# Postgres for the cluster (ARCHITECTURE.md section 8.2), on a local-path volume. The
 # password comes from the rootcause-db Secret, which scripts/k8s-up.sh
-# creates outside git (spec section 13.2).
+# creates outside git (ARCHITECTURE.md section 13.2).
 apiVersion: v1
 kind: Service
 metadata:

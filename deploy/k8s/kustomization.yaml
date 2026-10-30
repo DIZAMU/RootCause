@@ -1,4 +1,4 @@
-# Everything Argo CD syncs from main into the cluster (spec sections 8.2 and
+# Everything Argo CD syncs from main into the cluster (ARCHITECTURE.md sections 8.2 and
 # 14). Not in here, because scripts/k8s-up.sh creates them: the namespaces
 # (namespaces.yaml; Argo CD may not create cluster-wide objects), the
 # rootcause-db and ghcr-pull Secrets (they hold secrets) and the

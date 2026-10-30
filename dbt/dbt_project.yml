@@ -1,4 +1,4 @@
-# RootCause analytics (spec section 9.2). dbt reads the engine's source tables
+# RootCause analytics (ARCHITECTURE.md section 9.2). dbt reads the engine's source tables
 # in schema public and writes every model to schema analytics, so a build never
 # touches the engine's own tables.
 name: rootcause

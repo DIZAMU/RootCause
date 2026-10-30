@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// Event is one logged action in a session (spec section 9.1).
+// Event is one logged action in a session (ARCHITECTURE.md section 9.1).
 type Event struct {
 	ID         int64
 	OccurredAt time.Time

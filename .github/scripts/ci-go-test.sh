@@ -9,8 +9,8 @@
 # Integration tests skip only when their database or Docker was never
 # configured, so in CI a skip means a broken setup, not a pass.
 #
-# Usage: scripts/ci-go-test.sh [--require TestName]... [go test args]...
-# Example: scripts/ci-go-test.sh --require TestScriptedSelection -tags webdist ./...
+# Usage: .github/scripts/ci-go-test.sh [--require TestName]... [go test args]...
+# Example: .github/scripts/ci-go-test.sh --require TestScriptedSelection -tags webdist ./...
 set -euo pipefail
 
 # Skipped unless asked for on purpose: RC_DBT_STRESS=1, or RC_CLUSTER_URL
@@ -25,7 +25,7 @@ while [ "${1:-}" = "--require" ]; do
 done
 [ "$#" -gt 0 ] || { echo "usage: ci-go-test.sh [--require TestName]... [go test args]..." >&2; exit 2; }
 
-root="$(cd "$(dirname "$0")/.." && pwd)"
+root="$(cd "$(dirname "$0")/../.." && pwd)"
 log="$(mktemp)"
 trap 'rm -f "$log"' EXIT
 

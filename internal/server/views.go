@@ -13,7 +13,7 @@ import (
 	"github.com/DIZAMU/RootCause/internal/store"
 )
 
-// ShellCommand opens a shell in the active sandbox (spec section 11: the
+// ShellCommand opens a shell in the active sandbox (ARCHITECTURE.md section 11: the
 // dashboard shows it; v2 embeds a terminal instead).
 const ShellCommand = "rootcause shell"
 

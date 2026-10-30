@@ -11,12 +11,12 @@ hints:
   - "df -h viser ledig plass per filsystem. du -sh viser hvor mye en mappe inneholder, og ls -la viser også skjulte navn som starter med punktum."
   - "{junk} tar omtrent {junk_mb} MB. Finn ut hva det er, og fjern det."
 walkthrough: |
-  Loggen sier "No space left on device": appen får ikke skrevet fordi
+  Loggen sier "No space left on device". Appen får ikke skrevet fordi
   volumet er fullt. df -h /srv/data bekrefter at det er 100 % brukt.
 
   Finn hva som tar plassen. du -sh /srv/data/* går glipp av skjulte mapper,
   fordi * hopper over navn som starter med punktum. Bruk du -sh
-  /srv/data/.[!.]* /srv/data/* eller ls -la, eller søk etter store filer:
+  /srv/data/.[!.]* /srv/data/* eller ls -la, eller søk etter store filer.
     find /srv/data -type f -size +10M
   Her var {junk} en gjenglemt eksport på omtrent {junk_mb} MB.
 

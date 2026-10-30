@@ -17,7 +17,7 @@ walkthrough: |
 
   When a service dies on start, read its log first. tail
   /var/log/lagerapp/lagerapp.log ends with ERROR lines that say what was
-  wrong: here the setting {setting} in section [{section}] of
+  wrong. Here it was the setting {setting} in section [{section}] of
   /etc/lagerapp/lagerapp.ini. Either data_dir pointed at a directory that
   does not exist (the stock files are in /var/lib/lagerapp), or the port
   setting was missing (it should be port = {port} under [server]).

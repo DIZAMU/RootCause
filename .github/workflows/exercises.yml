@@ -1,4 +1,4 @@
-# Exercise validation (spec section 14): for each changed exercise and seeds
+# Exercise validation (ARCHITECTURE.md section 14): for each changed exercise and seeds
 # 1, 2 and 3, build the image; break then check must fail; break, solution,
 # check must pass. Pull requests and pushes to main validate only the changed
 # exercises; tags and manual runs validate all of them. Tags reach this
@@ -46,13 +46,13 @@ jobs:
           PUSH_AFTER: ${{ github.sha }}
         run: |
           if [ "$EVENT" = workflow_dispatch ] || [ "$REF_TYPE" = tag ]; then
-            ids="$(scripts/ci-changed-exercises.sh all)"
+            ids="$(.github/scripts/ci-changed-exercises.sh all)"
           elif [ "$EVENT" = pull_request ]; then
-            ids="$(scripts/ci-changed-exercises.sh "$PR_BASE" "$PR_HEAD")"
+            ids="$(.github/scripts/ci-changed-exercises.sh "$PR_BASE" "$PR_HEAD")"
           elif [ -z "$PUSH_BEFORE" ] || [ "$PUSH_BEFORE" = 0000000000000000000000000000000000000000 ]; then
-            ids="$(scripts/ci-changed-exercises.sh all)"
+            ids="$(.github/scripts/ci-changed-exercises.sh all)"
           else
-            ids="$(scripts/ci-changed-exercises.sh "$PUSH_BEFORE" "$PUSH_AFTER")"
+            ids="$(.github/scripts/ci-changed-exercises.sh "$PUSH_BEFORE" "$PUSH_AFTER")"
           fi
           echo "exercises to validate: ${ids:-none}"
           # One line, space-separated; empty when nothing changed.
@@ -64,7 +64,7 @@ jobs:
           go-version-file: go.mod
       - name: enable Docker userns-remap
         if: steps.list.outputs.ids != ''
-        run: sudo scripts/ci-enable-userns.sh
+        run: sudo .github/scripts/ci-enable-userns.sh
       - name: validate, seeds 1 2 3
         if: steps.list.outputs.ids != ''
         env:

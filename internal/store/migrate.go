@@ -20,7 +20,7 @@ const migrateLockKey int64 = 7300_0001
 
 // Migrate applies every migration not yet applied, in filename order, each in
 // its own transaction. Applied migrations are recorded in schema_migrations, so
-// re-running is a no-op. Migrations are versioned SQL files (spec section 9.1).
+// re-running is a no-op. Migrations are versioned SQL files (ARCHITECTURE.md section 9.1).
 //
 // It holds an advisory lock while it works, so concurrent callers wait their
 // turn and then find the migrations already applied.

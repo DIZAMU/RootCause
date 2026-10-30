@@ -1,4 +1,4 @@
-# Release (spec section 14): on a vX.Y.Z tag on main, validate every exercise,
+# Release (ARCHITECTURE.md section 14): on a vX.Y.Z tag on main, validate every exercise,
 # then build the API image and push it to ghcr.io/dizamu/rootcause-api under
 # that tag only. The job summary has the digest; the owner pins it in
 # deploy/k8s/kustomization.yaml in a pull request, and Argo CD deploys it
@@ -35,7 +35,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
-        run: scripts/ci-release-image.sh check-tag "$TAG" "$GITHUB_SHA"
+        run: .github/scripts/ci-release-image.sh check-tag "$TAG" "$GITHUB_SHA"
 
   validate:
     needs: check

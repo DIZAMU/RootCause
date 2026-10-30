@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Proves the Phase 7 done-when criteria on the running cluster (spec section
-# 18), after scripts/k8s-up.sh:
+# Proves the cluster isolation on the running cluster (ARCHITECTURE.md
+# section 13.2), after scripts/k8s-up.sh:
 #
 #   1. The API's service account can create, read, exec into and delete pods
 #      in sandboxes, and nothing else anywhere (a kubectl auth can-i matrix).

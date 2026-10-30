@@ -17,7 +17,7 @@ import (
 	"github.com/DIZAMU/RootCause/internal/store"
 )
 
-// Start begins a specific exercise (spec section 10: rootcause start <id>).
+// Start begins a specific exercise (ARCHITECTURE.md section 10: rootcause start <id>).
 func (a *App) Start(ctx context.Context, args []string) error {
 	if len(args) < 1 {
 		a.say("start.usage", nil)
@@ -243,7 +243,7 @@ func (a *App) GiveUp(ctx context.Context) error {
 }
 
 // Status shows the active session, the level per topic, the review queue and
-// the best stars per exercise (spec section 10).
+// the best stars per exercise (ARCHITECTURE.md section 10).
 func (a *App) Status(ctx context.Context) error {
 	if sess, ok, err := a.active(ctx); err != nil {
 		return err
@@ -289,7 +289,7 @@ func (a *App) printReviewQueue(ctx context.Context) error {
 	return nil
 }
 
-// printLevels shows the current level for each topic (spec section 7.1),
+// printLevels shows the current level for each topic (ARCHITECTURE.md section 7.1),
 // computed from the finished outcomes.
 func (a *App) printLevels(ctx context.Context) error {
 	a.say("status.levels_header", nil)

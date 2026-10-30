@@ -18,10 +18,10 @@ import (
 )
 
 // reapInterval is how often the long-running dashboard server reaps expired
-// sessions (spec section 8.4 step 8).
+// sessions (ARCHITECTURE.md section 8.4 step 8).
 const reapInterval = time.Minute
 
-// Serve runs the local dashboard on 127.0.0.1 (spec sections 10 and 11) until
+// Serve runs the local dashboard on 127.0.0.1 (ARCHITECTURE.md sections 10 and 11) until
 // Ctrl-C. It reaps expired sessions on a ticker while it runs.
 func (a *App) Serve(ctx context.Context, args []string) error {
 	port, listenAll, ok := parseServe(args)
@@ -101,7 +101,7 @@ func parseServe(args []string) (port int, listenAll bool, ok bool) {
 }
 
 // checkListenAll refuses --listen-all unless the runtime is kubernetes: only
-// the cluster deployment listens beyond 127.0.0.1 (spec section 13.1), behind
+// the cluster deployment listens beyond 127.0.0.1 (ARCHITECTURE.md section 13.1), behind
 // k3d's port mapping on the host's 127.0.0.1.
 func checkListenAll(listenAll bool, runtimeName string) error {
 	if listenAll && runtimeName != "kubernetes" {

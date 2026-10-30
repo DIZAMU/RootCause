@@ -1,4 +1,4 @@
-# v1 data services (spec section 8.1). Postgres is bound to 127.0.0.1 only, so
+# v1 data services (ARCHITECTURE.md section 8.1). Postgres is bound to 127.0.0.1 only, so
 # it is never reachable from outside this machine. The password comes from a
 # git-ignored .env file (see .env.example); it is never committed.
 name: rootcause

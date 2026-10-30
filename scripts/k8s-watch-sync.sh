@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Watches Argo CD roll out a merge on its own (spec section 14): start it
+# Watches Argo CD roll out a merge on its own (ARCHITECTURE.md section 14): start it
 # before you merge a pull request that changes deploy/k8s, then merge and run
 # nothing else. It records the revision the rootcause Application is synced
 # to, waits until main on GitHub moves past it, then until Argo CD reports

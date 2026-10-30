@@ -15,7 +15,7 @@ import (
 // one cannot start (migration 0002).
 var ErrActiveSession = errors.New("learner already has an active session")
 
-// Session is one attempt at one variant (spec section 3).
+// Session is one attempt at one variant (ARCHITECTURE.md section 3).
 type Session struct {
 	ID              string
 	LearnerID       int
@@ -97,7 +97,7 @@ func (s *Store) SessionByID(ctx context.Context, id string) (Session, error) {
 	return sess, nil
 }
 
-// DueSessions returns active sessions whose TTL has passed (spec section 8.4
+// DueSessions returns active sessions whose TTL has passed (ARCHITECTURE.md section 8.4
 // step 8), oldest expiry first.
 func (s *Store) DueSessions(ctx context.Context) ([]Session, error) {
 	rows, err := s.pool.Query(ctx, `SELECT `+sessionColumns+`

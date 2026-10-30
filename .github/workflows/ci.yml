@@ -1,4 +1,4 @@
-# CI for every pull request and every push to main (spec section 14).
+# CI for every pull request and every push to main (ARCHITECTURE.md section 14).
 # A push to a PR branch already runs through pull_request, so pushes to other
 # branches are left out to save Actions minutes.
 name: ci
@@ -57,17 +57,17 @@ jobs:
       - name: shellcheck
         run: |
           shellcheck --version
-          shellcheck scripts/*.sh .githooks/commit-msg exercises/*/*.sh
+          shellcheck scripts/*.sh .github/scripts/*.sh .githooks/commit-msg exercises/*/*.sh
       - name: admission policy shape
         run: |
           scripts/install-k8s-tools.sh "$RUNNER_TEMP/k8s-bin"
-          scripts/ci-check-admission.sh "$RUNNER_TEMP/k8s-bin/kubectl"
+          .github/scripts/ci-check-admission.sh "$RUNNER_TEMP/k8s-bin/kubectl"
       - name: no credentials on command lines
         run: |
-          scripts/ci-check-credential-args.sh --self-test
-          scripts/ci-check-credential-args.sh
+          .github/scripts/ci-check-credential-args.sh --self-test
+          .github/scripts/ci-check-credential-args.sh
       - name: commit-msg hook cases
-        run: bash scripts/test-commit-msg.sh
+        run: bash .github/scripts/test-commit-msg.sh
       - name: i18n key parity
         run: |
           go test -count=1 -run 'TestLocaleParity' ./internal/i18n/
@@ -97,7 +97,7 @@ jobs:
         run: scripts/build-web.sh
       # Before any container starts: the restart switches Docker's storage.
       - name: enable Docker userns-remap
-        run: sudo scripts/ci-enable-userns.sh
+        run: sudo .github/scripts/ci-enable-userns.sh
       - name: start Postgres with rootcause init
         run: |
           pw="$(openssl rand -hex 24)"
@@ -110,13 +110,13 @@ jobs:
         env:
           RC_REQUIRE_DOCKER: "1"
         run: >-
-          scripts/ci-go-test.sh
+          .github/scripts/ci-go-test.sh
           --require TestScriptedSelection
           --require TestBuildRecoversFromKilledEngine
           --require TestPlaySvc01
           -tags webdist ./...
 
-  # The release deploy/k8s pins must be a pushed vX.Y.Z (spec section 14).
+  # The release deploy/k8s pins must be a pushed vX.Y.Z (ARCHITECTURE.md section 14).
   # GITHUB_TOKEN is the only credential, with packages: read on this job only.
   # A pull request from a fork gets no package access, so the job does not
   # run there.
@@ -135,4 +135,4 @@ jobs:
       - name: pinned digest is a release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: scripts/ci-release-image.sh check-kustomization
+        run: .github/scripts/ci-release-image.sh check-kustomization

@@ -1,4 +1,4 @@
-# The API's identity (spec section 13.2): it may create, read, exec into and
+# The API's identity (ARCHITECTURE.md section 13.2): it may create, read, exec into and
 # delete pods in sandboxes. Nothing else, and nowhere else: a Role, not a
 # ClusterRole. scripts/k8s-prove.sh checks this with kubectl auth can-i.
 apiVersion: v1

@@ -12,7 +12,7 @@ hints:
   - "{share} is owned by group {group_owner} with mode {mode}, and so are the files inside. Members of {dept} need the group to be {dept} and to have write access."
 walkthrough: |
   On Linux every file and directory has an owner, a group and three sets of
-  permissions: for the owner, for the group and for everyone else. Creating a
+  permissions, one for the owner, one for the group and one for everyone else. Creating a
   file in a directory needs write access to the directory. Editing a file
   needs write access to the file.
 
@@ -21,7 +21,7 @@ walkthrough: |
   {mode}, so the group rule does not give {dept} write access.
 
   The fix is to give the share and everything in it back to the group and let
-  the group write:
+  the group write.
     chgrp -R {dept} {share}
     chmod -R g+w {share}
     chmod g+s {share}

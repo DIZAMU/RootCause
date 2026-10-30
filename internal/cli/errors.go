@@ -35,7 +35,7 @@ func failWith(key string, vars map[string]string, cause error) error {
 	return &userError{key: key, vars: vars, cause: cause}
 }
 
-// Message renders err for the learner in lang (spec section 12). Known
+// Message renders err for the learner in lang (ARCHITECTURE.md section 12). Known
 // failures get their own text. Anything else gets a translated heading
 // followed by its technical detail; that detail comes from Go, Docker or
 // Postgres and is not translated.

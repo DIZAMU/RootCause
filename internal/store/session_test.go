@@ -93,7 +93,7 @@ func TestDifficultyFrozenAtStart(t *testing.T) {
 		t.Fatalf("end session: %v", err)
 	}
 
-	// Recalibrate the exercise, as Phase 4 may do.
+	// Recalibrate the exercise, as calibration may do.
 	if err := s.SyncExercises(ctx, []ExerciseRow{
 		{ID: xid, Version: 1, Topic: "disk", Difficulty: 2},
 	}); err != nil {

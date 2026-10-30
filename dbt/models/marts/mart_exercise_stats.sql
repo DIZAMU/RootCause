@@ -1,5 +1,5 @@
 -- Per exercise: solve rate, hint use and duration over all counted sessions,
--- and the calibration flag (spec section 7.3). The flag is set only once an
+-- and the calibration flag (ARCHITECTURE.md section 7.3). The flag is set only once an
 -- exercise has at least 10 counted sessions: too_hard when difficulty 1 is
 -- solved under 50% of the time, too_easy when difficulty 3 is solved over
 -- 90% of the time.

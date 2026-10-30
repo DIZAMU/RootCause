@@ -1,4 +1,4 @@
-/* Design tokens (spec section 11). Two tiers: primitives (ramps) are never
+/* Design tokens (ARCHITECTURE.md section 11). Two tiers: primitives (ramps) are never
    used by components; components use only the semantic tokens below, which
    are defined for light and dark. Contrast of every text and boundary pair
    was measured on the computed sRGB values: text 4.5:1 or more, controls and
@@ -95,7 +95,7 @@
   --hit-min: 40px;
   --hit-touch: 44px;
 
-  /* Motion (Phase 10 brief). Transitions name their properties and move
+  /* Motion. Transitions name their properties and move
      only opacity, transform and filter. */
   --ease-out: cubic-bezier(0.2, 0, 0, 1);
   --ease-enter: cubic-bezier(0.25, 0.46, 0.45, 0.94);

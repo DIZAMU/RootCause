@@ -9,11 +9,11 @@
 #
 # Pass such values on stdin instead (curl --config -).
 #
-# Usage: scripts/ci-check-credential-args.sh [file...]   (default: the other scripts/*.sh)
-#        scripts/ci-check-credential-args.sh --self-test
+# Usage: .github/scripts/ci-check-credential-args.sh [file...]   (default: the other scripts/*.sh)
+#        .github/scripts/ci-check-credential-args.sh --self-test
 set -euo pipefail
 
-root="$(cd "$(dirname "$0")/.." && pwd)"
+root="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$root"
 
 pattern='(^|[[:space:]])(-u|--user|-H|--header)[[:space:]]+"([^"]*\$\(|[^"]*\$\{?[A-Za-z_]*([Tt][Oo][Kk][Ee][Nn]|[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd])|[Aa]uthorization:)'
@@ -48,8 +48,8 @@ files=("$@")
 if [[ ${#files[@]} -eq 0 ]]; then
 	# Every script but this one, whose comments and self-test hold the
 	# patterns on purpose.
-	for f in scripts/*.sh; do
-		[[ "$f" == scripts/ci-check-credential-args.sh ]] || files+=("$f")
+	for f in scripts/*.sh .github/scripts/*.sh; do
+		[[ "$f" == .github/scripts/ci-check-credential-args.sh ]] || files+=("$f")
 	done
 fi
 if hits="$(grep -nHE -- "$pattern" "${files[@]}")"; then

@@ -17,7 +17,7 @@ walkthrough: |
 
   Når en tjeneste dør ved oppstart, les loggen først. tail
   /var/log/lagerapp/lagerapp.log slutter med ERROR-linjer som sier hva som
-  var galt: her innstillingen {setting} i seksjonen [{section}] i
+  var galt. Her var det innstillingen {setting} i seksjonen [{section}] i
   /etc/lagerapp/lagerapp.ini. Enten pekte data_dir på en mappe som ikke
   finnes (lagerfilene ligger i /var/lib/lagerapp), eller så manglet
   port-innstillingen (den skal være port = {port} under [server]).

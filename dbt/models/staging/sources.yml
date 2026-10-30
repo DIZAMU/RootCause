@@ -2,7 +2,7 @@ version: 2
 
 sources:
   - name: engine
-    description: Source tables written by the engine (spec section 9.1).
+    description: Source tables written by the engine (ARCHITECTURE.md section 9.1).
     schema: public
     tables:
       - name: session
