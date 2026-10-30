@@ -9,6 +9,7 @@ export type Strings = Record<string, string>;
 
 export interface Overview {
   lang: Lang;
+  terminal: boolean; // the dashboard has a web terminal (v2)
   active: { id: string; exercise: string } | null;
   // A session start in progress: the engine's generic step, nothing more.
   starting: { exercise: string; step: number; steps: number } | null;

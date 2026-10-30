@@ -9,8 +9,9 @@ type Step = (typeof steps)[number];
 // Intro is the guided first-run tour: four steps in a modal dialog, with
 // Back, Next and Skip. It opens on a browser's first visit (no stored
 // preferences) and again from the help dialog. Esc, Skip and the last step's
-// button all end it, and end calls onDone.
-export function Intro({ open, onDone }: { open: boolean; onDone: () => void }) {
+// button all end it, and end calls onDone. Without a web terminal (v1) the
+// session step points to rootcause shell instead.
+export function Intro({ open, terminal, onDone }: { open: boolean; terminal: boolean; onDone: () => void }) {
   const { t } = useI18n();
   const [index, setIndex] = useState(0);
   const next = useRef<HTMLButtonElement>(null);
@@ -29,6 +30,7 @@ export function Intro({ open, onDone }: { open: boolean; onDone: () => void }) {
     moved.current = false;
   }, [index]);
   const step = steps[index] ?? "inbox";
+  const text = step === "session" && !terminal ? "session_shell" : step;
   const last = index === steps.length - 1;
   const go = (i: number) => {
     moved.current = true;
@@ -44,8 +46,8 @@ export function Intro({ open, onDone }: { open: boolean; onDone: () => void }) {
           <p className="label" aria-live="polite">
             {t("web.intro.step", { n: index + 1, total: steps.length })}
           </p>
-          <h2 id="intro-title">{t(`web.intro.${step}.title`)}</h2>
-          <p>{t(`web.intro.${step}.body`)}</p>
+          <h2 id="intro-title">{t(`web.intro.${text}.title`)}</h2>
+          <p>{t(`web.intro.${text}.body`)}</p>
         </div>
         <div className="intro-dots" aria-hidden="true">
           {steps.map((s, i) => (

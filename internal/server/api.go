@@ -87,6 +87,7 @@ func decode(r *http.Request, v any) error {
 
 type overviewJSON struct {
 	Lang     string        `json:"lang"`
+	Terminal bool          `json:"terminal"` // the dashboard has a web terminal (v2)
 	Active   *activeJSON   `json:"active"`
 	Starting *startingJSON `json:"starting"` // a start in progress; null if none
 	Next     *nextJSON     `json:"next"`
@@ -148,7 +149,7 @@ type statsJSON struct {
 func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	lang := s.lang(ctx)
-	out := overviewJSON{Lang: lang, Levels: []levelJSON{}}
+	out := overviewJSON{Lang: lang, Terminal: s.cfg.Engine.HasTerminal(), Levels: []levelJSON{}}
 	s.startMu.Lock()
 	if s.starting != nil {
 		st := *s.starting
