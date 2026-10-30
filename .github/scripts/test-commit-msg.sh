@@ -3,7 +3,7 @@
 # and messages it must reject. Exit 0 when every case behaves as expected.
 set -uo pipefail
 
-root="$(cd "$(dirname "$0")/.." && pwd)"
+root="$(cd "$(dirname "$0")/../.." && pwd)"
 hook="$root/.githooks/commit-msg"
 tmp="$(mktemp)"
 trap 'rm -f "$tmp"' EXIT

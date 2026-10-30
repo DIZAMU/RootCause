@@ -131,7 +131,7 @@ func (w *world) expect(step, wantID string, wantReason selector.Reason) selector
 	return p
 }
 
-// TestScriptedSelection is the Phase 4 acceptance test (spec section 18):
+// TestScriptedSelection is the acceptance test for adaptive selection:
 // after a scripted series of sessions, the selector picks the expected
 // exercises. Sessions run through the real engine and store, the marts are
 // built by the real dbt container, and picks go through the real Load and

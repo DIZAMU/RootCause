@@ -1,9 +1,9 @@
-# The Argo CD project RootCause's Application belongs to (spec section 13.2).
+# The Argo CD project RootCause's Application belongs to (ARCHITECTURE.md section 13.2).
 # It limits what a bad commit on main can make Argo CD do: one source repo,
 # the two RootCause namespaces on this cluster only, and only the kinds
 # deploy/k8s uses. The one cluster-wide kind allowed is the admission policy
 # for sandbox pods and its binding, so self-heal restores the policy if it is
-# deleted or weakened (spec section 13.2); the namespaces still come from
+# deleted or weakened (ARCHITECTURE.md section 13.2); the namespaces still come from
 # scripts/k8s-up.sh. Argo CD's core install has no default project, so an
 # Application outside this one syncs nothing.
 apiVersion: argoproj.io/v1alpha1

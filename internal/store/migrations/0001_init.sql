@@ -1,4 +1,4 @@
--- 0001_init: source tables written by the engine (spec section 9.1).
+-- 0001_init: source tables written by the engine (ARCHITECTURE.md section 9.1).
 
 CREATE TABLE learner (
     id         INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

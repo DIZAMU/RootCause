@@ -13,7 +13,7 @@ import (
 	"github.com/DIZAMU/RootCause/internal/store"
 )
 
-// Next starts the recommended next exercise (spec sections 7.2 and 10).
+// Next starts the recommended next exercise (ARCHITECTURE.md sections 7.2 and 10).
 func (a *App) Next(ctx context.Context) error {
 	if cur, ok, err := a.active(ctx); err != nil {
 		return err
@@ -62,8 +62,8 @@ func (a *App) Next(ctx context.Context) error {
 	return a.startExercise(ctx, pick.Exercise.ID, seed)
 }
 
-// Stats shows the per-exercise statistics from the marts (spec section 7.3).
-// With --refresh it rebuilds them first (spec section 9.3).
+// Stats shows the per-exercise statistics from the marts (ARCHITECTURE.md section 7.3).
+// With --refresh it rebuilds them first (ARCHITECTURE.md section 9.3).
 func (a *App) Stats(ctx context.Context, args []string) error {
 	switch {
 	case len(args) == 0:
@@ -118,7 +118,7 @@ func (a *App) refreshAfterSession(ctx context.Context) {
 }
 
 // EnvDBTMode set to "cronjob" means a Kubernetes CronJob builds the marts
-// (the cluster deployment, spec section 8.2), so the app never runs dbt
+// (the cluster deployment, ARCHITECTURE.md section 8.2), so the app never runs dbt
 // itself.
 const EnvDBTMode = "RC_DBT_MODE"
 

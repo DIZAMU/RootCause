@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-// ExerciseRow is the catalog data synced from an exercise.yaml (spec section
+// ExerciseRow is the catalog data synced from an exercise.yaml (ARCHITECTURE.md section
 // 9.1). The store takes plain rows so it does not depend on the exercise loader.
 type ExerciseRow struct {
 	ID         string

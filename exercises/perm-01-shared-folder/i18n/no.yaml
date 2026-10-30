@@ -12,7 +12,7 @@ hints:
   - "{share} eies av gruppen {group_owner} med rettighetene {mode}, og det samme gjelder filene i den. Medlemmer av {dept} trenger at gruppen er {dept} og har skrivetilgang."
 walkthrough: |
   I Linux har hver fil og mappe en eier, en gruppe og tre sett med
-  rettigheter: for eieren, for gruppen og for alle andre. For å lage en fil i
+  rettigheter, ett for eieren, ett for gruppen og ett for alle andre. For å lage en fil i
   en mappe trenger du skrivetilgang til mappen. For å endre en fil trenger du
   skrivetilgang til filen.
 
@@ -21,7 +21,7 @@ walkthrough: |
   rettighetene {mode}, så grupperegelen gir ikke {dept} skrivetilgang.
 
   Løsningen er å gi mappen og alt i den tilbake til gruppen og la gruppen
-  skrive:
+  skrive.
     chgrp -R {dept} {share}
     chmod -R g+w {share}
     chmod g+s {share}

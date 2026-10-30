@@ -1,4 +1,4 @@
-# The API and dashboard image for the cluster (spec section 8.2). The context
+# The API and dashboard image for the cluster (ARCHITECTURE.md section 8.2). The context
 # is a directory scripts/build-api-image.sh assembles: the rootcause binary,
 # built with -tags webdist so the dashboard is embedded, and the exercises
 # folder, whose scripts the engine copies into sandboxes. Nothing else: no

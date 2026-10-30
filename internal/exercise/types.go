@@ -1,13 +1,13 @@
 // Package exercise loads and validates RootCause exercise definitions.
 //
-// An exercise is a folder (see spec section 4.1) holding an exercise.yaml, the
+// An exercise is a folder (see ARCHITECTURE.md section 4.1) holding an exercise.yaml, the
 // scripts that build, break, check and solve a machine, and per-language text
 // files. Load reads that folder, checks it against the schema, and returns a
 // validated Exercise. The CLI, CI and the validate script all go through here,
 // so the rules live in one place.
 package exercise
 
-// Exercise mirrors exercise.yaml (spec section 4.2).
+// Exercise mirrors exercise.yaml (ARCHITECTURE.md section 4.2).
 type Exercise struct {
 	ID               string    `yaml:"id"`
 	Version          int       `yaml:"version"`
@@ -28,7 +28,7 @@ type Exercise struct {
 	Tmpfs []Tmpfs `yaml:"tmpfs"`
 
 	// Capabilities are the Linux capabilities the sandbox adds back after
-	// dropping all of them (spec section 13.1). Empty means none are needed.
+	// dropping all of them (ARCHITECTURE.md section 13.1). Empty means none are needed.
 	Capabilities []string `yaml:"capabilities"`
 
 	// Variants maps a variant name (e.g. "port") to its allowed values.
@@ -40,7 +40,7 @@ type Exercise struct {
 	dir string `yaml:"-"`
 }
 
-// Resources is the sandbox resource budget (spec section 17).
+// Resources is the sandbox resource budget (ARCHITECTURE.md section 4.2).
 type Resources struct {
 	Memory string  `yaml:"memory"`
 	CPUs   float64 `yaml:"cpus"`
@@ -52,7 +52,7 @@ type Tmpfs struct {
 	Size string `yaml:"size"` // e.g. "32Mi"
 }
 
-// Check controls how and when the grader runs (spec section 4.2).
+// Check controls how and when the grader runs (ARCHITECTURE.md section 4.2).
 type Check struct {
 	RunsFrom string `yaml:"runs_from"` // sandbox | runner
 	Before   string `yaml:"before"`    // none | restart
@@ -61,7 +61,7 @@ type Check struct {
 // Dir returns the folder the exercise was loaded from.
 func (e *Exercise) Dir() string { return e.dir }
 
-// I18n mirrors one language file, i18n/<lang>.yaml (spec section 4.4).
+// I18n mirrors one language file, i18n/<lang>.yaml (ARCHITECTURE.md section 4.4).
 type I18n struct {
 	Ticket struct {
 		Title string `yaml:"title"`

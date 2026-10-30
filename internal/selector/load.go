@@ -12,13 +12,13 @@ type Source string
 
 const (
 	SourceMarts    Source = "marts"    // the dbt marts
-	SourceFallback Source = "fallback" // topic levels from the engine, no review (spec section 9.3)
+	SourceFallback Source = "fallback" // topic levels from the engine, no review (ARCHITECTURE.md section 9.3)
 )
 
 // Deps are what Load reads from.
 type Deps struct {
 	Store *store.Store
-	// Level is the engine's topic level (spec section 7.1), used when the
+	// Level is the engine's topic level (ARCHITECTURE.md section 7.1), used when the
 	// marts are missing or stale.
 	Level func(ctx context.Context, learnerID int, topic string) (int, error)
 	// Refresh rebuilds the marts (runs dbt). It is called at most once, when

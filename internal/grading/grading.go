@@ -3,7 +3,7 @@
 // to read and test. The engine feeds it ordered outcomes and stores the result.
 package grading
 
-// Stars scores a solved session by how many hints were revealed (spec section
+// Stars scores a solved session by how many hints were revealed (ARCHITECTURE.md section
 // 6): no hints = 3, hint 1 or 2 = 2, hint 3 = 1.
 func Stars(hintsRevealed int) int {
 	switch {
@@ -26,7 +26,7 @@ const (
 	Fail               // gave up, or expired after a check: counts toward leveling down
 )
 
-// Classify maps a finished session to its Kind (spec sections 6 and 7.1).
+// Classify maps a finished session to its Kind (ARCHITECTURE.md sections 6 and 7.1).
 func Classify(status string, stars *int, hadCheck bool) Kind {
 	switch status {
 	case "solved":
@@ -67,7 +67,7 @@ func Level(outcomes []Outcome) int {
 }
 
 // StreakToLevelUp is how many consecutive strong solves at the current level
-// raise it (spec section 7.1).
+// raise it (ARCHITECTURE.md section 7.1).
 const StreakToLevelUp = 2
 
 // MaxLevel is the highest topic level in v1.

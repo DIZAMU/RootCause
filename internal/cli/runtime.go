@@ -13,7 +13,7 @@ import (
 )
 
 // EnvRuntime selects the sandbox runtime: "docker" (the default, v1) or
-// "kubernetes" (v2, spec section 8.2).
+// "kubernetes" (v2, ARCHITECTURE.md section 8.2).
 const EnvRuntime = "RC_RUNTIME"
 
 // Backend is the runtime the engine drives, with the builder for its images
@@ -38,7 +38,7 @@ func RuntimeName() (string, error) {
 }
 
 // NewBackend builds the backend RC_RUNTIME selects. The docker runtime must
-// keep sandbox root apart from host root (spec section 13.1, OQ-3); the
+// keep sandbox root apart from host root (ARCHITECTURE.md section 13.1); the
 // kubernetes runtime gives every sandbox pod its own user namespace itself.
 // Errors are already the translatable user errors.
 func NewBackend(ctx context.Context) (Backend, error) {

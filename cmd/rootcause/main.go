@@ -1,4 +1,4 @@
-// Command rootcause is the RootCause CLI (spec section 10).
+// Command rootcause is the RootCause CLI (ARCHITECTURE.md section 10).
 //
 // The play commands are init, next, start, shell, ticket, hint, check, reset,
 // giveup, status, list, stats, serve (the dashboard) and lang. The developer
@@ -138,7 +138,7 @@ func cmdSelfTest(ctx context.Context, args []string) int {
 }
 
 // cmdDBTProject writes the embedded dbt project into an existing directory.
-// The cluster's dbt CronJob runs it as an init container (spec section 8.2).
+// The cluster's dbt CronJob runs it as an init container (ARCHITECTURE.md section 8.2).
 func cmdDBTProject(args []string) int {
 	if len(args) != 1 {
 		fmt.Fprintln(os.Stderr, "dbt-project: expected exactly one directory")

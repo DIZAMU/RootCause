@@ -11,12 +11,12 @@ hints:
   - "df -h shows free space per file system. du -sh shows how much a folder holds, and ls -la also shows hidden names that start with a dot."
   - "{junk} takes about {junk_mb} MB. Find out what it is and remove it."
 walkthrough: |
-  The log says "No space left on device": the app cannot write because the
+  The log says "No space left on device". The app cannot write because the
   volume is full. df -h /srv/data confirms it shows 100% used.
 
   Find what takes the space. du -sh /srv/data/* misses hidden folders,
   because * skips names that start with a dot. Use du -sh /srv/data/.[!.]*
-  /srv/data/* or ls -la, or search for big files:
+  /srv/data/* or ls -la, or search for big files.
     find /srv/data -type f -size +10M
   Here {junk} was a leftover export of about {junk_mb} MB.
 

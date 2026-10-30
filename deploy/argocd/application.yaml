@@ -1,4 +1,4 @@
-# RootCause's Application (spec section 14): Argo CD syncs deploy/k8s from
+# RootCause's Application (ARCHITECTURE.md section 14): Argo CD syncs deploy/k8s from
 # main into the cluster. Automated sync with prune (what leaves git leaves
 # the cluster) and self-heal (a change made by hand is reverted).
 # scripts/k8s-up.sh applies it; with --dev it turns automated sync off

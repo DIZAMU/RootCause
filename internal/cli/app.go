@@ -1,4 +1,4 @@
-// Package cli implements the rootcause command-line interface (spec section
+// Package cli implements the rootcause command-line interface (ARCHITECTURE.md section
 // 10). It is a thin layer over the session engine and the store; all
 // user-facing text comes from the i18n bundle.
 package cli

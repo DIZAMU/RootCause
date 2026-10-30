@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # check-commit-policy.sh checks every commit in <base>..<head> against the
-# authorship rules (spec section 15):
+# authorship rules (ARCHITECTURE.md section 15):
 #
 #   1. The message passes .githooks/commit-msg, the same check the local hook
 #      runs: no Co-authored-by trailer, no tool attribution line.
@@ -94,7 +94,7 @@ for sha in $commits; do
 done
 
 if [ "$failures" -gt 0 ]; then
-    echo "$failures problem(s) found. See spec section 15."
+    echo "$failures problem(s) found. See ARCHITECTURE.md section 15."
     exit 1
 fi
 echo "ok: every commit in $base..$head follows the commit policy"

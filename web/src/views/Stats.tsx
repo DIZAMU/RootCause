@@ -5,7 +5,7 @@ import { useI18n } from "../i18n";
 import { Icon } from "../ui/icons";
 import { Banner, Button, EmptyState, Ring, Skeleton, useAnnounce, useDuration, useLevelLabel, useLevelNext } from "../ui/kit";
 
-// Stats is the statistics view (spec section 7.3): topic levels, solves per
+// Stats is the statistics view (ARCHITECTURE.md section 7.3): topic levels, solves per
 // day, and the per-exercise statistics with calibration flags, all from the
 // dbt marts.
 export function Stats({ levels }: { levels: TopicLevel[] | undefined }) {

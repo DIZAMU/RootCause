@@ -44,7 +44,7 @@ func TestMessage(t *testing.T) {
 			[]string{"cgroup v2"}},
 		{"failed refresh with details", "en", fail("stats.refresh_failed", errors.New("dbt build exited 1")),
 			[]string{"Could not update your statistics", "Details: dbt build exited 1"}},
-		{"unknown error, generic heading", "no", errors.New("boom"), []string{"Noe gikk galt: boom"}},
+		{"unknown error, generic heading", "no", errors.New("boom"), []string{"Noe gikk galt (boom)."}},
 	}
 	for _, c := range cases {
 		got := Message(b, c.lang, c.err)

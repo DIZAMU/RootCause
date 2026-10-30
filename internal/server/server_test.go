@@ -327,7 +327,7 @@ func (s sessionJSON) eventTypes() string {
 	return strings.Join(types, ",")
 }
 
-// TestSessionOverAPI is the Phase 5 done-when at the API level: a session is
+// TestSessionOverAPI is the dashboard acceptance test at the API level: a session is
 // played from the dashboard while the CLI's engine acts on the same session,
 // and each side sees the other's actions, in both languages.
 func TestSessionOverAPI(t *testing.T) {

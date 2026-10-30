@@ -6,7 +6,7 @@ ticket:
     Noen endret noe på webserveren i går. Kan du ta en titt?
 hints:
   - "Sjekk om webserveren godtar sin egen konfigurasjon."
-  - "nginx har en innebygd konfigurasjonstest: kjør nginx -t"
+  - "nginx har en innebygd konfigurasjonstest. Kjør nginx -t"
   - "Linje {line} i nginx-konfigurasjonen har en syntaksfeil. Rett den og start nginx."
 walkthrough: |
   Nettstedet gikk ned fordi nginx-konfigurasjonen har en syntaksfeil, så nginx

@@ -1,6 +1,6 @@
 //go:build webdist
 
-// Package web holds the built dashboard (spec section 11). With the build tag
+// Package web holds the built dashboard (ARCHITECTURE.md section 11). With the build tag
 // webdist, the binary embeds web/dist, which scripts/build-web.sh creates.
 // Without the tag, a fresh clone builds with no Node toolchain, and the
 // dashboard serves a page that says how to build it.

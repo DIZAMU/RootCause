@@ -86,7 +86,7 @@ jobs:
           RC_DBT_HOST: postgres
           RC_REQUIRE_DOCKER: "1"
         run: >-
-          scripts/ci-go-test.sh
+          .github/scripts/ci-go-test.sh
           --require TestScriptedSelection
           --require TestBuildRecoversFromKilledEngine
           --require TestBuildFailureKeepsLog

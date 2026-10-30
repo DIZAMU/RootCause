@@ -11,9 +11,9 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// Readers for the dbt models in schema analytics (spec section 9.2), and the
+// Readers for the dbt models in schema analytics (ARCHITECTURE.md section 9.2), and the
 // source-table readers the selector falls back to when those models are
-// missing or stale (spec section 9.3).
+// missing or stale (ARCHITECTURE.md section 9.3).
 
 // missingRelation reports whether err means a schema or table does not exist,
 // which is how a database where dbt never ran looks.

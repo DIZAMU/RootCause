@@ -1,4 +1,4 @@
-// Package dbtproject embeds the dbt project (spec section 9.2) in the binary.
+// Package dbtproject embeds the dbt project (ARCHITECTURE.md section 9.2) in the binary.
 // internal/dbt extracts it into a fresh directory for each build, so a build
 // never reads the working tree, where a file caught mid-save could silently
 // drop models or tests from the run.

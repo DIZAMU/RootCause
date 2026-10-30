@@ -1,6 +1,6 @@
-// Package kubernetes implements runtime.Runtime with client-go (spec sections
+// Package kubernetes implements runtime.Runtime with client-go (ARCHITECTURE.md sections
 // 8.2 and 8.3). Every sandbox is a pod in the sandboxes namespace, created
-// locked down (spec sections 13.1 and 13.2): its own user namespace
+// locked down (ARCHITECTURE.md sections 13.1 and 13.2): its own user namespace
 // (hostUsers false), seccomp RuntimeDefault, all capabilities dropped and the
 // exercise's allowlist added back, no privilege escalation, no service account
 // token, no host paths, memory and CPU limits, and no cluster DNS. The pause

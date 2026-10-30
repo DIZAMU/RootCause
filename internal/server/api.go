@@ -360,7 +360,7 @@ type progressDayJSON struct {
 	AvgStars *float64 `json:"avg_stars"`
 }
 
-// handleStats is the statistics view (spec section 7.3): the per-exercise
+// handleStats is the statistics view (ARCHITECTURE.md section 7.3): the per-exercise
 // statistics and the learner's results per day, both read from the marts,
 // and the state of the statistics. Before the first build it returns empty
 // lists with built false.

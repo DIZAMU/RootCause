@@ -12,7 +12,7 @@ hints:
   - "In {conf} the listen directive is bound to 127.0.0.1. Make nginx listen on all addresses for port {port}, then restart it."
 walkthrough: |
   Every listening service is bound to an address. 127.0.0.1 is the loopback
-  address: only programs on the same machine can reach it. 0.0.0.0 means
+  address, so only programs on the same machine can reach it. 0.0.0.0 means
   every address the machine has, so other machines can connect too.
 
   curl http://localhost:{port}/ on the server works, which is why the

@@ -12,7 +12,7 @@ hints:
   - "I {conf} er listen-direktivet bundet til 127.0.0.1. Få nginx til å lytte på alle adresser for port {port}, og start den på nytt."
 walkthrough: |
   Hver tjeneste som lytter, er bundet til en adresse. 127.0.0.1 er
-  loopback-adressen: bare programmer på samme maskin når den. 0.0.0.0 betyr
+  loopback-adressen, så bare programmer på samme maskin når den. 0.0.0.0 betyr
   alle adressene maskinen har, så andre maskiner kan også koble til.
 
   curl http://localhost:{port}/ på serveren virker, og derfor trodde

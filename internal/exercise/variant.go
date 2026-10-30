@@ -7,7 +7,7 @@ import (
 )
 
 // SelectVariant picks one concrete value for each variant from a seed
-// (spec section 3: a variant is "one concrete version of an exercise, chosen by
+// (ARCHITECTURE.md section 3: a variant is "one concrete version of an exercise, chosen by
 // a seed"). The same seed always yields the same choice, so a session can be
 // reproduced exactly. The result maps variant name to the chosen value, ready to
 // be passed to break.sh as RC_VAR_<NAME> environment variables.

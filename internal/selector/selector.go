@@ -1,6 +1,6 @@
-// Package selector picks the learner's next exercise (spec section 7.2). Next
+// Package selector picks the learner's next exercise (ARCHITECTURE.md section 7.2). Next
 // is a pure function of its Input; Load gathers that input from the dbt marts,
-// or from the source tables when the marts are missing or stale (spec section
+// or from the source tables when the marts are missing or stale (ARCHITECTURE.md section
 // 9.3).
 package selector
 
@@ -41,7 +41,7 @@ type Input struct {
 	Previous    string                // exercise of the learner's most recent session, "" if none
 }
 
-// Reason says which rule of spec section 7.2 made the pick.
+// Reason says which rule of ARCHITECTURE.md section 7.2 made the pick.
 type Reason string
 
 const (
@@ -60,7 +60,7 @@ type Pick struct {
 // the catalog holds nothing but the previous exercise.
 var ErrNoCandidate = errors.New("no exercise to pick")
 
-// Next applies spec section 7.2 in order:
+// Next applies ARCHITECTURE.md section 7.2 in order:
 //
 //  1. Review first: the due exercise with the oldest due time, ties by id.
 //  2. Otherwise the weakest topic: lowest level, ties broken by least recently
@@ -144,7 +144,7 @@ func Next(in Input, now time.Time) (Pick, error) {
 const variantTries = 20
 
 // ReviewSeed returns a seed for a review pick, so the exercise "returns as a
-// new variant" (spec section 7.2): the first of up to 20 random seeds whose
+// new variant" (ARCHITECTURE.md section 7.2): the first of up to 20 random seeds whose
 // variant values differ from the last session's. If none does (the exercise
 // has no variants, or only one), it returns a random seed that differs from
 // the last one. variantOf is the exercise's own variant selection.

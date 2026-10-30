@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # ci-enable-userns.sh turns on Docker's user namespace remapping on a CI
-# runner, the isolation the engine requires for sandboxes (spec section 13.1,
-# OQ-3). It merges "userns-remap": "default" into /etc/docker/daemon.json,
+# runner, the isolation the engine requires for sandboxes (ARCHITECTURE.md section
+# 13.1). It merges "userns-remap": "default" into /etc/docker/daemon.json,
 # restarts Docker, and waits until `docker info` reports name=userns.
 #
 # Restarting Docker with userns-remap switches its storage root, so start
 # containers (Postgres, sandboxes) only after this script.
 #
-# Usage (as root): scripts/ci-enable-userns.sh
+# Usage (as root): .github/scripts/ci-enable-userns.sh
 set -euo pipefail
 
 conf=/etc/docker/daemon.json

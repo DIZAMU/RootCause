@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Proves the Phase 8 done-when criteria on the running cluster (spec section
-# 18), after scripts/k8s-up.sh without --dev:
+# Proves the GitOps setup on the running cluster (ARCHITECTURE.md sections
+# 8.2 and 14), after scripts/k8s-up.sh without --dev:
 #
 #   1. Argo CD's rootcause Application syncs deploy/k8s from main with
 #      automated sync, prune and self-heal on, and is Synced and Healthy at

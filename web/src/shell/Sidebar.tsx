@@ -24,7 +24,7 @@ const pages: { name: Route["name"]; href: string; icon: IconName; label: string 
 const themes: Theme[] = ["system", "light", "dark"];
 const themeIcons: Record<Theme, IconName> = { system: "monitor", light: "sun", dark: "moon" };
 
-// Sidebar is the app's navigation (spec section 11): the pages, the active
+// Sidebar is the app's navigation (ARCHITECTURE.md section 11): the pages, the active
 // session, the topic level rings, the language and theme switches, and the
 // help button. On a desktop it collapses to a rail of icons: the rings go,
 // and the two switches become one button each that moves to the next value.

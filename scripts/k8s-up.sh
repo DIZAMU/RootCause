@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Brings up the v2 cluster (spec section 8.2) and deploys RootCause into it.
+# Brings up the v2 cluster (ARCHITECTURE.md section 8.2) and deploys RootCause into it.
 # Safe to re-run: every step creates what is missing and updates the rest.
 #
-# Default (GitOps, spec section 14): Argo CD syncs deploy/k8s from main on
+# Default (GitOps, ARCHITECTURE.md section 14): Argo CD syncs deploy/k8s from main on
 # GitHub, so the cluster runs the release pinned there, never the working
 # tree.
 #   1. The k3d cluster from deploy/k8s/k3d.yaml (started if it exists).
@@ -42,7 +42,7 @@ deploy_key_file="${RC_ARGOCD_DEPLOY_KEY:-$HOME/.config/rootcause/argocd-deploy-k
 ghcr_user=DIZAMU
 repo_url=git@github.com:DIZAMU/RootCause.git
 
-# Argo CD core (spec section 8.2). To update: change the version, download
+# Argo CD core (ARCHITECTURE.md section 8.2). To update: change the version, download
 # manifests/core-install.yaml for it, put its sha256sum here, and pin the
 # images it names by digest in deploy/argocd/install/kustomization.yaml.
 ARGOCD_VERSION=v3.5.6

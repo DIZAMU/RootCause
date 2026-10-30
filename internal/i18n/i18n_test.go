@@ -10,7 +10,7 @@ import (
 )
 
 // TestLocaleParity fails if a key exists in one language and not the other,
-// or if any string is empty (spec section 12).
+// or if any string is empty (ARCHITECTURE.md section 12).
 func TestLocaleParity(t *testing.T) {
 	b, err := Load(locales.FS)
 	if err != nil {

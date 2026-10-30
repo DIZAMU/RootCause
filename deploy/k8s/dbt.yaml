@@ -1,5 +1,5 @@
-# dbt for the cluster (spec sections 8.2 and 9.3): a CronJob builds the marts
-# every 10 minutes. The API has no rights to start Jobs (spec section 13.2),
+# dbt for the cluster (ARCHITECTURE.md sections 8.2 and 9.3): a CronJob builds the marts
+# every 10 minutes. The API has no rights to start Jobs (ARCHITECTURE.md section 13.2),
 # so the dashboard shows when the marts were last built instead.
 # scripts/k8s-dbt.sh starts a build at once.
 #

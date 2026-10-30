@@ -1,5 +1,5 @@
 // Package docker implements runtime.Runtime by shelling out to the docker CLI.
-// Every sandbox is created locked down (spec section 13.1): all Linux
+// Every sandbox is created locked down (ARCHITECTURE.md section 13.1): all Linux
 // capabilities dropped, memory/CPU/process limits, no privileged mode, no
 // Docker socket, an init process as PID 1 (docker's, or systemd for
 // exercises that boot it), and network "none" or an internal-only network.
@@ -107,7 +107,7 @@ func (r *Runtime) Create(ctx context.Context, spec runtime.SandboxSpec) (runtime
 }
 
 // CheckIsolation verifies that root inside a sandbox is not root on the host
-// (spec section 13.1, OQ-3): the daemon must run with user namespace
+// (ARCHITECTURE.md section 13.1): the daemon must run with user namespace
 // remapping or in rootless mode. It returns an error otherwise.
 func (r *Runtime) CheckIsolation(ctx context.Context) error {
 	out, errOut, err := r.run(ctx, nil, "info", "--format", "{{json .SecurityOptions}}")

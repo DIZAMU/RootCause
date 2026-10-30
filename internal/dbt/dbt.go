@@ -1,4 +1,4 @@
-// Package dbt runs the dbt project (spec section 9.2) in a container, against
+// Package dbt runs the dbt project (ARCHITECTURE.md section 9.2) in a container, against
 // the database the engine uses. The project is embedded in the binary
 // (package dbtproject) and extracted into a fresh directory for each build, so
 // a build never reads the working tree. The container is locked down like a
@@ -30,11 +30,11 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// Image is the dbt Core image with the Postgres adapter (spec section 2),
+// Image is the dbt Core image with the Postgres adapter (ARCHITECTURE.md section 2),
 // pinned by digest.
 const Image = "ghcr.io/dbt-labs/dbt-postgres:1.9.0@sha256:37624cce09877ff03fd5f6b01355fdf5a3462a1b651d40d8b8edc1cf056eedf0"
 
-// Timeout bounds one dbt build (spec section 9.3).
+// Timeout bounds one dbt build (ARCHITECTURE.md section 9.3).
 const Timeout = 120 * time.Second
 
 // ErrUnsupportedDatabase means the DSN does not point at the compose Postgres,
@@ -301,7 +301,7 @@ func extract(fsys fs.FS) (string, error) {
 }
 
 // WriteProject writes the embedded dbt project into dir, which must exist.
-// The cluster's dbt CronJob runs it from there (spec section 8.2).
+// The cluster's dbt CronJob runs it from there (ARCHITECTURE.md section 8.2).
 func WriteProject(dir string) error {
 	return writeTree(dbtproject.FS, dir)
 }

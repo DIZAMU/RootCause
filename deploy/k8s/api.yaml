@@ -1,4 +1,4 @@
-# The API and dashboard (spec section 8.2): rootcause serve with the
+# The API and dashboard (ARCHITECTURE.md section 8.2): rootcause serve with the
 # kubernetes runtime. It runs as the rootcause-api service account, which may
 # only manage pods in sandboxes (rbac.yaml). The dashboard is reached through
 # the NodePort, which k3d publishes on the host's 127.0.0.1:7300 only

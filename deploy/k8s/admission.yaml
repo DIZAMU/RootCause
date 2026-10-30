@@ -1,4 +1,4 @@
-# Admission rules for every pod in the sandboxes namespace (spec section 13.2).
+# Admission rules for every pod in the sandboxes namespace (ARCHITECTURE.md section 13.2).
 # The runtime builds sandbox pods this way already (internal/runtime/kubernetes,
 # podFor); this policy makes the API server refuse any pod that is not built
 # this way, whoever asks: the API, Argo CD or an administrator. There are no

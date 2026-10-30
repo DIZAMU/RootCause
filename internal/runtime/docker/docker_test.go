@@ -73,7 +73,7 @@ func TestSandboxLifecycle(t *testing.T) {
 		t.Fatal("create returned empty id")
 	}
 
-	// The security flags from spec section 13.1 are really applied.
+	// The security flags from ARCHITECTURE.md section 13.1 are really applied.
 	out, err := exec.Command("docker", "inspect", "--format",
 		"{{.HostConfig.CapDrop}}|{{.HostConfig.CapAdd}}|{{.HostConfig.PidsLimit}}|"+
 			"{{.HostConfig.NetworkMode}}|{{.HostConfig.Privileged}}|{{.HostConfig.Init}}|"+

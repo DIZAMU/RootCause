@@ -8,12 +8,12 @@ ticket:
     own zone {zone}, served by a small DNS server on the machine itself.
     Can you sort it out?
 hints:
-  - "Follow a name lookup step by step: which sources does the system ask, which DNS server does it use, and does that server answer?"
+  - "Follow a name lookup step by step. Which sources does the system ask, which DNS server does it use, and does that server answer?"
   - "getent hosts fil01.{zone} looks a name up the way programs do. dig @127.0.0.1 fil01.{zone} asks the DNS server directly. Also read /etc/nsswitch.conf and /etc/resolv.conf."
   - "The fault is in {fault_file}. nsswitch.conf must list dns for hosts, and dnsmasq must listen on the address resolv.conf names."
 walkthrough: |
   A name lookup on Linux goes through a chain. /etc/nsswitch.conf decides
-  which sources to ask for host names: "files" is /etc/hosts, "dns" is the
+  which sources to ask for host names. "files" is /etc/hosts, "dns" is the
   DNS servers in /etc/resolv.conf. Here resolv.conf points at 127.0.0.1,
   where dnsmasq serves the zone {zone}.
 

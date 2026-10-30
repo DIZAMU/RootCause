@@ -7,7 +7,7 @@ import { Banner, EmptyState, Skeleton, Stars, TopicLabel, useDuration } from "..
 const topics = ["permissions", "services", "logs", "networking", "disk"];
 const outcomes: SessionStatus[] = ["solved", "gave_up", "expired", "voided"];
 
-// History lists the finished sessions (spec section 11), newest first, with
+// History lists the finished sessions (ARCHITECTURE.md section 11), newest first, with
 // filters by topic and outcome.
 export function History() {
   const { t, date, num } = useI18n();

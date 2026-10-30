@@ -20,7 +20,7 @@ import (
 	"github.com/DIZAMU/RootCause/internal/store"
 )
 
-// Topics is the fixed v1 topic set (spec section 4.2), in display order.
+// Topics is the fixed v1 topic set (ARCHITECTURE.md section 4.2), in display order.
 var Topics = []string{"permissions", "services", "logs", "networking", "disk"}
 
 // Texts loads the exercise texts of sess in lang, and the values that fill
@@ -93,7 +93,7 @@ type Recommendation struct {
 	RefreshErr error // set if the marts were stale and rebuilding them failed
 }
 
-// Recommend picks the learner's next exercise from catalog (spec section
+// Recommend picks the learner's next exercise from catalog (ARCHITECTURE.md section
 // 7.2), through selector.Load and selector.Next. deps.Refresh decides whether
 // stale marts are rebuilt first; nil only previews the pick. It returns
 // selector.ErrNoCandidate when there is nothing to pick.
@@ -130,7 +130,7 @@ func Seed(exercisesDir string, pick selector.Pick, random func() int64) (int64, 
 	return selector.ReviewSeed(ex.SelectVariant, *pick.Due, random), nil
 }
 
-// BuildStats rebuilds the marts with dbt (spec section 9.3) while holding the
+// BuildStats rebuilds the marts with dbt (ARCHITECTURE.md section 9.3) while holding the
 // store's stats lock, so the CLI and the dashboard never build at once.
 func BuildStats(ctx context.Context, st *store.Store, dsn string) error {
 	return st.WithStatsLock(ctx, func() error { return dbt.Build(ctx, dsn) })
@@ -140,7 +140,7 @@ func BuildStats(ctx context.Context, st *store.Store, dsn string) error {
 var ErrNoExercises = errors.New("cannot read the exercises folder")
 
 // Catalog loads every exercise in exercisesDir and returns its catalog rows
-// (spec section 9.1). Any exercise that fails to load is an error.
+// (ARCHITECTURE.md section 9.1). Any exercise that fails to load is an error.
 func Catalog(exercisesDir string) ([]store.ExerciseRow, error) {
 	entries, err := os.ReadDir(exercisesDir)
 	if err != nil {

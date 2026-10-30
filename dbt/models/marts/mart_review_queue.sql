@@ -1,4 +1,4 @@
--- Exercises that come back for review (spec section 7.2, rule 1): per learner
+-- Exercises that come back for review (ARCHITECTURE.md section 7.2, rule 1): per learner
 -- and exercise, the latest counted session was a fail or a 1-star solve. It is
 -- due 72 hours after that session ended; the selector compares due_at with
 -- the current time, so a queue built earlier is still correct later. A later

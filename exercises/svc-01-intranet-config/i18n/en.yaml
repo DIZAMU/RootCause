@@ -6,7 +6,7 @@ ticket:
     Someone changed something on the web server yesterday. Can you take a look?
 hints:
   - "Check whether the web server accepts its own configuration."
-  - "nginx has a built-in config test: run nginx -t"
+  - "nginx has a built-in config test. Run nginx -t"
   - "Line {line} of the nginx config file has a syntax error. Fix it and start nginx."
 walkthrough: |
   The site went down because the nginx configuration has a syntax error, so

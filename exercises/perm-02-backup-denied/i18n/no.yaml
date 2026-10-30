@@ -7,21 +7,21 @@ ticket:
     skriver til /srv/backup. Loggen er /var/log/nightly-backup.log. Kan du få
     den til å virke igjen?
 hints:
-  - "Les loggen, og kjør backupen selv slik nattjobben gjør: som brukeren backup."
+  - "Les loggen, og kjør backupen selv slik nattjobben gjør, som brukeren backup."
   - "runuser -u backup -- /usr/local/bin/nightly-backup.sh gjenskaper feilen. ls -l og ls -ld viser hvem som får gjøre hva."
   - "Rettighetsproblemet er på {blocked}. Brukeren backup må kunne kjøre skriptet og skrive til /srv/backup."
 walkthrough: |
   Loggen slutter med en linje om "Permission denied". Kjør jobben selv som
-  brukeren den faktisk kjører som:
+  brukeren den faktisk kjører som.
     runuser -u backup -- /usr/local/bin/nightly-backup.sh
   Kjører du den som root, skjules problemet, fordi root får gjøre nesten alt.
 
-  Feilen pekte på {blocked}. To ting må stemme for denne jobben: skriptet
+  Feilen pekte på {blocked}. To ting må stemme for denne jobben. Skriptet
   trenger kjørebiten (x) for i det hele tatt å kunne kjøres, og brukeren
   backup trenger skrivetilgang til /srv/backup for å lage arkivet. Sjekk dem
   med ls -l /usr/local/bin/nightly-backup.sh og ls -ld /srv/backup.
 
-  Rett bare det som er feil:
+  Rett bare det som er feil.
     chmod 755 /usr/local/bin/nightly-backup.sh
     chown backup:backup /srv/backup
   Kjør deretter jobben som backup igjen, og se etter det nye arkivet i
@@ -29,7 +29,7 @@ walkthrough: |
 
   chmod 777 ville også fått den til å kjøre, men da kan hvilken som helst
   bruker endre hva backupskriptet gjør eller tukle med arkivene. Å kjøre
-  jobben som root er heller ingen løsning: jobben skal bare ha den tilgangen
+  jobben som root er heller ingen løsning, fordi jobben skal bare ha den tilgangen
   den trenger.
 feedback:
   backup_user_changed: "Brukeren backup er ikke lenger den vanlige backupbrukeren."

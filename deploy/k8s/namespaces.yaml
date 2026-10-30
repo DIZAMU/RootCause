@@ -1,4 +1,4 @@
-# The two namespaces of spec section 8.2. Pod Security Admission enforces the
+# The two namespaces of ARCHITECTURE.md section 8.2. Pod Security Admission enforces the
 # restricted profile on the system workloads and baseline on sandboxes: the
 # learner is root in a sandbox pod (in its own user namespace), which the
 # restricted profile forbids.

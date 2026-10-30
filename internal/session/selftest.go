@@ -12,8 +12,8 @@ import (
 	"github.com/DIZAMU/RootCause/internal/runtime"
 )
 
-// SelfTest proves one exercise works end to end for one seed (spec section 18,
-// Phase 1), using exactly the sandbox flags and script handling a real session
+// SelfTest proves one exercise works end to end for one seed (ARCHITECTURE.md
+// section 14), using exactly the sandbox flags and script handling a real session
 // uses, so validation cannot drift from the engine:
 //
 //	A. unsolved: setup, break, then check must exit 1 (the fault is detected)

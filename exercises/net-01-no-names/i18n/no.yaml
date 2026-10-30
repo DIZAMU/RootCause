@@ -8,12 +8,12 @@ ticket:
     egen sone {zone}, som en liten DNS-server på selve maskinen svarer for.
     Kan du ordne det?
 hints:
-  - "Følg et navneoppslag steg for steg: hvilke kilder spør systemet, hvilken DNS-server bruker det, og svarer den serveren?"
+  - "Følg et navneoppslag steg for steg. Hvilke kilder spør systemet, hvilken DNS-server bruker det, og svarer den serveren?"
   - "getent hosts fil01.{zone} slår opp et navn slik programmer gjør. dig @127.0.0.1 fil01.{zone} spør DNS-serveren direkte. Les også /etc/nsswitch.conf og /etc/resolv.conf."
   - "Feilen ligger i {fault_file}. nsswitch.conf må ha med dns for hosts, og dnsmasq må lytte på adressen som resolv.conf oppgir."
 walkthrough: |
   Et navneoppslag i Linux går gjennom en kjede. /etc/nsswitch.conf avgjør
-  hvilke kilder som spørres om vertsnavn: "files" er /etc/hosts, "dns" er
+  hvilke kilder som spørres om vertsnavn. "files" er /etc/hosts, "dns" er
   DNS-serverne i /etc/resolv.conf. Her peker resolv.conf på 127.0.0.1, der
   dnsmasq svarer for sonen {zone}.
 

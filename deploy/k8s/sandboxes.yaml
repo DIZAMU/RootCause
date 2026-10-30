@@ -1,11 +1,11 @@
-# Limits and network isolation for the sandboxes namespace (spec section
+# Limits and network isolation for the sandboxes namespace (ARCHITECTURE.md section
 # 13.2). The runtime in internal/runtime/kubernetes labels every pod with
 # rootcause.network ("none" or "internal"); the engine labels check runners
 # rootcause.runner=true.
 #
 # Nothing in or out by default: no internet, no cluster DNS, no
 # rootcause-system, no other sandbox. The one exception is a check runner,
-# which may connect to sandboxes on the internal network (spec section 13.3
+# which may connect to sandboxes on the internal network (ARCHITECTURE.md section 13.3
 # names the limit: with two sessions, a runner could reach the other one).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -52,7 +52,7 @@ spec:
             matchLabels:
               rootcause.runner: "true"
 ---
-# At most two sessions and a check runner at a time (spec section 8.2's
+# At most two sessions and a check runner at a time (ARCHITECTURE.md section 8.2's
 # memory budget on an 8 GB WSL2 host).
 apiVersion: v1
 kind: ResourceQuota

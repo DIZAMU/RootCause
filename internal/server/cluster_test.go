@@ -17,7 +17,7 @@ import (
 )
 
 // TestClusterSession plays one session through the dashboard deployed in the
-// cluster (spec section 18, Phase 7), the way the browser does: it reads the
+// cluster (ARCHITECTURE.md section 8.2), the way the browser does: it reads the
 // token from the served page, starts perm-01 over the API, works in the web
 // terminal, and checks. From the terminal it also tries every address in
 // RC_CLUSTER_PROBES ("name=ip:port,..."), all of which must be unreachable

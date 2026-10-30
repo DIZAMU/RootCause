@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ci-changed-exercises.sh prints the ids of the exercises CI must validate,
-# one per line (spec section 14):
+# one per line (ARCHITECTURE.md section 14):
 #
 #   all          every exercise
 #   <base> <head>  the exercises with a file changed between the two commits.
@@ -9,11 +9,11 @@
 #
 # Exercises deleted in the change are left out.
 #
-# Usage: scripts/ci-changed-exercises.sh all
-#        scripts/ci-changed-exercises.sh <base> <head>
+# Usage: .github/scripts/ci-changed-exercises.sh all
+#        .github/scripts/ci-changed-exercises.sh <base> <head>
 set -euo pipefail
 
-root="$(cd "$(dirname "$0")/.." && pwd)"
+root="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$root"
 
 all() {
@@ -29,7 +29,7 @@ case "$#" in
         ;;
     2)
         changed="$(git diff --name-only "$1" "$2")"
-        if grep -qxE 'scripts/ci-changed-exercises\.sh|scripts/validate-exercise\.sh|\.github/workflows/exercises\.yml' <<<"$changed"; then
+        if grep -qxE '\.github/scripts/ci-changed-exercises\.sh|scripts/validate-exercise\.sh|\.github/workflows/exercises\.yml' <<<"$changed"; then
             all
             exit 0
         fi

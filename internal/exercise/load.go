@@ -15,7 +15,7 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// requiredFiles must exist in every exercise folder (spec section 4.1).
+// requiredFiles must exist in every exercise folder (ARCHITECTURE.md section 4.1).
 var requiredFiles = []string{
 	"Dockerfile",
 	"break.sh",
@@ -25,7 +25,7 @@ var requiredFiles = []string{
 	filepath.Join("i18n", "no.yaml"),
 }
 
-// languages are the language codes every exercise must provide (spec section 12).
+// languages are the language codes every exercise must provide (ARCHITECTURE.md section 12).
 var languages = []string{"en", "no"}
 
 var (
@@ -39,7 +39,7 @@ var (
 	memoryPattern = regexp.MustCompile(`^[0-9]+(Mi|Gi)$`)
 
 	// allowedCaps are the only Linux capabilities an exercise may add back after
-	// the sandbox drops all of them (spec section 13.1). Each one is needed by
+	// the sandbox drops all of them (ARCHITECTURE.md section 13.1). Each one is needed by
 	// ordinary services (dropping privileges, owning files, binding low ports).
 	// Capabilities that weaken isolation, such as SYS_ADMIN, NET_ADMIN or
 	// SYS_PTRACE, are deliberately absent: adding one needs an owner decision.
@@ -49,7 +49,7 @@ var (
 	}
 )
 
-// hintTiers is the number of hints every exercise defines (spec section 3).
+// hintTiers is the number of hints every exercise defines (ARCHITECTURE.md section 3).
 const hintTiers = 3
 
 // Load reads exercise.yaml from dir, then validates the schema, the required
@@ -203,7 +203,7 @@ func (e *Exercise) validateFiles() error {
 // validateI18n loads both language files and checks that each is complete
 // (ticket fields, walkthrough and exactly three hints, none empty) and that both
 // define the same shape: the same number of hints and the same feedback keys
-// (spec section 4.4).
+// (ARCHITECTURE.md section 4.4).
 func (e *Exercise) validateI18n() error {
 	if e.dir == "" {
 		return nil
