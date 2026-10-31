@@ -4,7 +4,7 @@ Practise fixing real, broken Linux servers.
 
 RootCause hands you a helpdesk ticket and a Linux machine with a planted fault. You find the cause and fix it in a terminal, an automated check grades the result, and the next ticket adapts to your weak spots. Everything runs locally, in English or Norwegian.
 
-<!-- Demo video. Drag rootcause-demo.mp4 into this file in GitHub's web editor and it replaces this comment with the video. -->
+https://github.com/user-attachments/assets/964d82a3-a2bf-432c-83cb-0a9f9e0b9eef
 
 ![The inbox, with the recommended ticket pinned first](docs/images/inbox.png)
 
