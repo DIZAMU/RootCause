@@ -182,7 +182,11 @@ func TestGuard(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := serve(t, server.Config{Bundle: bundle, Assets: fstest.MapFS{"index.html": {Data: []byte(indexHTML)}}})
+	r := serve(t, server.Config{Bundle: bundle, Assets: fstest.MapFS{
+		"index.html":           {Data: []byte(indexHTML)},
+		"assets/app.js":        {Data: []byte("// app")},
+		"assets/fonts/x.woff2": {Data: []byte("font")},
+	}})
 
 	cases := []struct {
 		name, method, path, host, token string
@@ -205,6 +209,9 @@ func TestGuard(t *testing.T) {
 		{"api, upper-case host", "GET", "/api/i18n/no", "LOCALHOST:" + r.port, r.token, 200},
 		{"index, localhost host", "GET", "/", "localhost:" + r.port, "", 200},
 		{"unknown language", "GET", "/api/i18n/de", "", r.token, 404},
+		{"asset file", "GET", "/assets/app.js", "", "", 200},
+		{"asset folder is not listed", "GET", "/assets/", "", "", 404},
+		{"nested asset folder is not listed", "GET", "/assets/fonts/", "", "", 404},
 	}
 	for _, c := range cases {
 		res := r.do(c.method, c.path, c.host, nil, c.token)

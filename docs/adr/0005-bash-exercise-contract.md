@@ -4,7 +4,7 @@ Accepted on 2026-10-27.
 
 ## Context
 
-Exercises are written by hand, so they must be easy to read and review. The learner must never be able to read the fault or the check.
+Exercises are written by hand, so they must be easy to read and review. The learner should not be handed the fault or the check.
 
 ## Decision
 
@@ -16,4 +16,5 @@ Exercises are written by hand, so they must be easy to read and review. The lear
 ## Consequences
 
 - The image holds only what a real server would have.
+- This keeps the scripts out of sight, not secret. While a check runs, the learner is root in the same sandbox and could read it (ADR 0019).
 - Every check has an assertion against shortcuts. For 3 seeds, CI runs break then check, which must fail, and break, solution, check, which must pass.

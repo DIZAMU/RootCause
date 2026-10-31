@@ -56,6 +56,40 @@ func TestMessage(t *testing.T) {
 	}
 }
 
+// TestWebMessage checks that the dashboard never gets technical detail: it
+// gets the translated message, and the detail goes to the serve terminal.
+func TestWebMessage(t *testing.T) {
+	b := loadBundle(t)
+	cases := []struct {
+		name    string
+		err     error
+		want    string // substring of the dashboard text
+		logged  bool   // whether the detail reaches the log
+		private string // must not reach the dashboard
+	}{
+		{"unknown error", errors.New("dial tcp 127.0.0.1:5432: connection refused"),
+			"terminal where rootcause serve runs", true, "5432"},
+		{"known key with cause", fail("error.compose_failed", errors.New("exit status 1")),
+			"Could not start Postgres", true, "exit status 1"},
+		{"known key without cause", fail("error.no_root", nil),
+			"Cannot find the RootCause folder", false, ""},
+		{"sentinel", session.ErrGiveUpTooEarly, "", false, ""},
+	}
+	for _, c := range cases {
+		var log strings.Builder
+		got := WebMessage(b, "en", c.err, &log)
+		if c.want != "" && !strings.Contains(got, c.want) {
+			t.Errorf("%s: WebMessage = %q, want it to contain %q", c.name, got, c.want)
+		}
+		if c.private != "" && strings.Contains(got, c.private) {
+			t.Errorf("%s: WebMessage = %q leaks %q", c.name, got, c.private)
+		}
+		if c.logged != strings.Contains(log.String(), c.err.Error()) {
+			t.Errorf("%s: log = %q, want the error logged: %v", c.name, log.String(), c.logged)
+		}
+	}
+}
+
 // TestUsedKeysExist fails if this package asks for a locale key that does not
 // exist. Bundle.T falls back to printing the raw key, so a typo would
 // otherwise only show up on screen.

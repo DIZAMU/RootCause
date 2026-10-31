@@ -158,9 +158,21 @@ func (s *Server) Handler(port int) http.Handler {
 	mux.HandleFunc("GET /{$}", s.handleIndex)
 	mux.HandleFunc("GET /index.html", s.handleIndex)
 	if s.cfg.Assets != nil {
-		mux.Handle("GET /assets/", http.FileServerFS(s.cfg.Assets))
+		mux.Handle("GET /assets/", noListing(http.FileServerFS(s.cfg.Assets)))
 	}
 	return s.guard(port, mux)
+}
+
+// noListing serves files only. http.FileServer lists a directory's contents
+// when asked for it, which the dashboard never needs.
+func noListing(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/") {
+			http.NotFound(w, r)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // guard applies the hardening described in the package comment, and the

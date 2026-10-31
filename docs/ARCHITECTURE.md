@@ -134,7 +134,7 @@ variants:
 - Exits 0 for a pass and 1 for a fail. Exit 2 means the check could not run, which is an infrastructure error and never counts against the learner.
 - Prints one line of JSON, such as `{"passed": false, "feedback": "site_unreachable"}`. The feedback key maps to a text that describes the symptom, never the fix.
 - Accepts every valid fix and rejects shortcuts. Each check has at least one assertion against shortcuts. For example, the config must be valid and the original site content must be served, so replacing the config with a default one fails.
-- Is copied in at check time and deleted afterwards, so the criteria cannot be read during the session.
+- Is copied in at check time and deleted afterwards, so it is not lying around during the session. While it runs, the learner is root in the same sandbox and could still read it and its environment (section 13.3).
 - With `runs_from: runner` it runs in a separate runner container instead. That is a fresh copy of the exercise image on the internal network, with no added capabilities, destroyed after the check. `RC_SANDBOX_HOST` holds the sandbox's host name.
 
 **solution.sh**
@@ -191,7 +191,7 @@ Placeholders are filled from variant values and derived values. Both language fi
 - Checks are unlimited, and a failed check costs nothing.
 - A reset gives a fresh copy of the same variant with no penalty. Revealed hints stay revealed.
 - Giving up becomes possible once hint 3 is revealed.
-- Infrastructure errors (check exit 2, a crashed sandbox) void the session, so it does not count.
+- Infrastructure errors (check exit 2, or a sandbox that crashed or was removed) void the session, so it does not count.
 - An expired session counts as a fail only if at least one check was run.
 
 ## 7. Adaptation
@@ -380,6 +380,7 @@ How it is built.
 - The dashboard follows the CLI by polling, the open session every 2 seconds and the overview every few seconds and on focus. The two front ends share only the database.
 - The session view never contains the seed, the variant values or the derived values. Hints appear once revealed, and the walkthrough once the session is solved or given up.
 - Everything the dashboard needs is in the binary, including its fonts (SIL OFL, with the licences next to the files) and its icons. It loads nothing from elsewhere. The terminal's code loads only on a session page.
+- An error the dashboard has no text for shows a short translated message, and its technical detail goes to the terminal that runs `rootcause serve`, never to the browser. Static files are served without folder listings.
 - `scripts/ui-check.sh` checks the dashboard in a real browser. It covers the first-run intro, the collapsed rail, centred pages on wide screens, the reset dialog, axe-core accessibility rules, layout shift, the keyboard rules, the Tab order, terminal latency, the CSP, and screenshots in both languages. It is not part of CI.
 
 ## 12. Languages
@@ -427,6 +428,8 @@ How it is built.
 - In `init: systemd` sandboxes, journald and tmp.mount are masked, because they need capabilities outside the allowlist. Service output is not kept in a journal.
 - `init: systemd` exercises need a host with cgroup v2, which is the WSL2 default. The systemd in the exercise images does not boot on cgroup v1, so the CLI and the selftest refuse such an exercise there with a clear error.
 - Sandboxes on the internal network can reach each other. With one learner and at most two sandboxes, this is accepted.
+- check.sh and the seed and variant values it receives are copied in only for the check, but while the check runs, the learner is root in the same sandbox and could read them. That only spoils the learner's own practice, and the scripts are public in this repository anyway.
+- A sandbox's writable filesystem has no size limit, so a learner (or a runaway command) could fill the host's disk. Docker can only limit it on XFS with project quotas. The tmpfs volumes an exercise declares are limited.
 
 **In Kubernetes mode**
 - k3d runs its node containers privileged and in the host's user namespace, so node root is host root, whatever Docker's userns-remap says. This is accepted for a local, single-user cluster (ADR 0011). Sandbox pods run in their own user namespaces, enforced by the admission policy for every requester, and system pods run as non-root users in their own user namespaces as well. Rootless k3d would fix this, but it needs sudo and k3d's support for it is still experimental.
@@ -440,7 +443,7 @@ How it is built.
 
 | Workflow | Runs on | Does |
 |---|---|---|
-| `ci.yml` | Every pull request and push to main | gofmt, go vet, golangci-lint, go test, shellcheck on all scripts, the frontend type check and build, and i18n key parity. Postgres comes from `rootcause init`, and any skipped test fails the run |
+| `ci.yml` | Every pull request and push to main | gofmt, go vet, golangci-lint, govulncheck, go test, shellcheck on all scripts, the frontend type check and build, and i18n key parity. Postgres comes from `rootcause init`, and any skipped test fails the run |
 | `exercises.yml` | Changes under `exercises/` | For each changed exercise and 3 seeds, it builds the image, checks that break then check fails, and that break, solution, check passes |
 | `dbt.yml` | Changes under `dbt/` | A dbt build against a Postgres service container, seeded with a scripted series of sessions played through the engine |
 | `commit-policy.yml` | Every pull request | Rejects Co-authored-by trailers, tool attribution lines, author emails other than the author's, and unsigned commits |
