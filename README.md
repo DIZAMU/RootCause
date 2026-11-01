@@ -181,7 +181,7 @@ GitHub Actions runs five workflows. Every action is pinned by commit SHA, and ev
 
 | Workflow | Does |
 |---|---|
-| `ci.yml` | gofmt, go vet, golangci-lint, shellcheck, i18n parity, the dashboard build, and every Go test with Postgres and Docker. It also checks that no script puts a credential on a command line and that the sandbox admission policy keeps every rule |
+| `ci.yml` | gofmt, go vet, golangci-lint, govulncheck (known vulnerabilities), shellcheck, i18n parity, the dashboard build, and every Go test with Postgres and Docker. It also checks that no script puts a credential on a command line and that the sandbox admission policy keeps every rule |
 | `exercises.yml` | Validates every changed exercise with 3 seeds |
 | `dbt.yml` | Runs the dbt build and its tests against Postgres |
 | `commit-policy.yml` | Checks that every commit is signed and follows the commit rules |

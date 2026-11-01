@@ -43,7 +43,7 @@ func (a *App) Serve(ctx context.Context, args []string) error {
 		ExercisesDir: a.exercisesDir(),
 		Catalog:      func() ([]store.ExerciseRow, error) { return loadAllExercises(a.root) },
 		BuildStats:   a.buildStats,
-		Describe:     func(lang string, err error) string { return Message(a.bundle, lang, err) },
+		Describe:     func(lang string, err error) string { return WebMessage(a.bundle, lang, err, os.Stderr) },
 		Assets:       web.Assets(),
 		CanRebuild:   os.Getenv(EnvDBTMode) != "cronjob",
 	})

@@ -314,6 +314,16 @@ func (e *Engine) Check(ctx context.Context, sessionID string) (CheckResult, erro
 	spec := e.specFor(ex, sessionID)
 	res, err := e.runCheck(ctx, ex, spec, sess.SandboxID, scriptEnv(sess.Seed, sess.VariantValues))
 	if err != nil {
+		// A sandbox that is gone (removed from outside, or crashed and
+		// stopped) can never be checked again. That is an infrastructure
+		// error, so the session is voided and does not count (ARCHITECTURE.md
+		// section 6), instead of staying active with nothing to work on.
+		if e.sandboxGone(ctx, sess.SandboxID) {
+			_ = e.st.AddEvent(ctx, sessionID, "voided", map[string]any{"reason": "sandbox_gone"})
+			_ = e.st.EndSession(ctx, sessionID, "voided", nil)
+			_ = e.rt.Destroy(ctx, sess.SandboxID)
+			return CheckResult{Infra: true}, nil
+		}
 		return CheckResult{}, fmt.Errorf("run check: %w", err)
 	}
 
@@ -356,6 +366,22 @@ func (e *Engine) Check(ctx context.Context, sessionID string) (CheckResult, erro
 		result.Level = lc
 	}
 	return result, nil
+}
+
+// sandboxGone reports whether the runtime no longer runs the sandbox. If the
+// runtime cannot say, the sandbox is assumed to be there, so a passing
+// problem never voids a session.
+func (e *Engine) sandboxGone(ctx context.Context, sandboxID string) bool {
+	boxes, err := e.rt.List(ctx)
+	if err != nil {
+		return false
+	}
+	for _, b := range boxes {
+		if b.ID == sandboxID {
+			return false
+		}
+	}
+	return true
 }
 
 // readyTimeout bounds how long a restarted sandbox may take to accept commands.

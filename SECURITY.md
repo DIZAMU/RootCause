@@ -17,4 +17,4 @@ Helpful things to include are what you found, how to reproduce it, and which mod
 
 ## Out of scope
 
-The limits already listed in ADR 0019, such as a learner faking a check from inside their own sandbox, or k3d's privileged nodes.
+The limits already listed in ADR 0019, such as a learner faking or reading a check from inside their own sandbox, filling their own disk from a sandbox, or k3d's privileged nodes.

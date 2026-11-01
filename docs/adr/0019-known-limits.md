@@ -13,6 +13,8 @@ These are accepted for a single-user practice tool that runs locally.
 - `check.before: restart` restarts the container. Files stay, but only PID 1 starts again and setup.sh does not run again. Services that must start at boot use `init: systemd`.
 - In Kubernetes mode there is no restart that keeps files, and `init: systemd` exercises (svc-02) are refused, because systemd cannot boot in a pod with its own user namespace.
 - A check runner can reach any sandbox on the internal network, not only its own. With at most two sessions this is accepted.
+- While a check runs, the learner could read check.sh and the seed and variant values it receives, since both run as root in the same sandbox. It only spoils the learner's own practice, and the scripts are public anyway.
+- A sandbox's writable filesystem has no size limit, so a learner could fill the host's disk. Docker limits it only on XFS with project quotas, which most hosts do not use.
 - k3d's nodes are privileged and run as host root (ADR 0011).
 - The cluster's dbt CronJob relies on dbt's own exit code, without the node count check.
 - The workflows and the commit check run from a pull request's own commits, so a pull request could weaken the checks that judge it. Changes to `.github/`, `scripts/` and `.githooks/` therefore need careful review.

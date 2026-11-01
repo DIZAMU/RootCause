@@ -15,9 +15,10 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  # CI tool, not a Go dependency: installed with go install at this version,
-  # which verifies every module against the Go checksum database.
+  # CI tools, not Go dependencies. Each is installed with go install at this
+  # version, which verifies every module against the Go checksum database.
   GOLANGCI_LINT_VERSION: v2.15.0
+  GOVULNCHECK_VERSION: v1.9.0
 
 jobs:
   checks:
@@ -54,6 +55,12 @@ jobs:
           go install "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@${GOLANGCI_LINT_VERSION}"
           golangci-lint run ./...
           golangci-lint run --build-tags webdist ./...
+      - name: govulncheck
+        # Fails when the code calls a function with a known vulnerability,
+        # in a module or in the Go standard library.
+        run: |
+          go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
+          govulncheck ./...
       - name: shellcheck
         run: |
           shellcheck --version
